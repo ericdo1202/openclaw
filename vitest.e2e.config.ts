@@ -21,12 +21,10 @@ export default defineConfig({
   ...base,
   test: {
     ...baseTest,
-    // vmForks reuses VM contexts in ways that can leak module state/mocks across
-    // files for our e2e harnesses. Use process forks for deterministic isolation.
-    pool: "forks",
+    pool: "vmForks",
     maxWorkers: e2eWorkers,
     silent: !verboseE2E,
-    include: ["test/**/*.e2e.test.ts", "src/**/*.e2e.test.ts"],
+    include: ["test/**/*.e2e.test.ts"],
     exclude,
   },
 });

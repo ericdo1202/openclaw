@@ -47,12 +47,9 @@ export const handleSubagentsCommand: CommandHandler = async (params, allowTextCo
     return handleSubagentsHelpAction();
   }
 
-  const requesterKey =
-    action === "spawn"
-      ? resolveRequesterSessionKey(params, {
-          preferCommandTarget: true,
-        })
-      : resolveRequesterSessionKey(params);
+  const requesterKey = resolveRequesterSessionKey(params, {
+    preferCommandTarget: action === "spawn",
+  });
   if (!requesterKey) {
     return stopWithText("⚠️ Missing session key.");
   }
@@ -73,7 +70,7 @@ export const handleSubagentsCommand: CommandHandler = async (params, allowTextCo
     case "focus":
       return await handleSubagentsFocusAction(ctx);
     case "unfocus":
-      return await handleSubagentsUnfocusAction(ctx);
+      return handleSubagentsUnfocusAction(ctx);
     case "list":
       return handleSubagentsListAction(ctx);
     case "kill":

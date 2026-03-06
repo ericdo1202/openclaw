@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/talk-voice";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 type ElevenLabsVoice = {
   voice_id: string;
@@ -73,10 +73,6 @@ function findVoice(voices: ElevenLabsVoice[], query: string): ElevenLabsVoice | 
   return partial ?? null;
 }
 
-function asTrimmedString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
 export default function register(api: OpenClawPluginApi) {
   api.registerCommand({
     name: "voice",
@@ -88,7 +84,7 @@ export default function register(api: OpenClawPluginApi) {
       const action = (tokens[0] ?? "status").toLowerCase();
 
       const cfg = api.runtime.config.loadConfig();
-      const apiKey = asTrimmedString(cfg.talk?.apiKey);
+      const apiKey = (cfg.talk?.apiKey ?? "").trim();
       if (!apiKey) {
         return {
           text:

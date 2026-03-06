@@ -1,6 +1,4 @@
-import { createTypingKeepaliveLoop } from "../../channels/typing-lifecycle.js";
-import { createTypingStartGuard } from "../../channels/typing-start-guard.js";
-import { isSilentReplyPrefixText, isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
+import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 
 export type TypingController = {
   onReplyStart: () => Promise<void>;
@@ -37,6 +35,7 @@ export function createTypingController(params: {
   // especially when upstream event emitters don't await async listeners.
   // Once we stop typing, we "seal" the controller so late events can't restart typing forever.
   let sealed = false;
+  let typingTimer: NodeJS.Timeout | undefined;
   let typingTtlTimer: NodeJS.Timeout | undefined;
   const typingIntervalMs = typingIntervalSeconds * 1000;
 
@@ -62,11 +61,10 @@ export function createTypingController(params: {
       clearTimeout(typingTtlTimer);
       typingTtlTimer = undefined;
     }
-    if (dispatchIdleTimer) {
-      clearTimeout(dispatchIdleTimer);
-      dispatchIdleTimer = undefined;
+    if (typingTimer) {
+      clearInterval(typingTimer);
+      typingTimer = undefined;
     }
-    typingLoop.stop();
     // Notify the channel to stop its typing indicator (e.g., on NO_REPLY).
     // This fires only once (sealed prevents re-entry).
     if (active) {
@@ -90,7 +88,7 @@ export function createTypingController(params: {
       clearTimeout(typingTtlTimer);
     }
     typingTtlTimer = setTimeout(() => {
-      if (!typingLoop.isRunning()) {
+      if (!typingTimer) {
         return;
       }
       log?.(`typing TTL reached (${formatTypingTtl(typingTtlMs)}); stopping typing indicator`);
@@ -100,22 +98,12 @@ export function createTypingController(params: {
 
   const isActive = () => active && !sealed;
 
-  const startGuard = createTypingStartGuard({
-    isSealed: () => sealed,
-    shouldBlock: () => runComplete,
-    rethrowOnError: true,
-  });
-
   const triggerTyping = async () => {
-    await startGuard.run(async () => {
-      await onReplyStart?.();
-    });
+    if (sealed) {
+      return;
+    }
+    await onReplyStart?.();
   };
-
-  const typingLoop = createTypingKeepaliveLoop({
-    intervalMs: typingIntervalMs,
-    onTick: triggerTyping,
-  });
 
   const ensureStart = async () => {
     if (sealed) {
@@ -158,11 +146,16 @@ export function createTypingController(params: {
     if (!onReplyStart) {
       return;
     }
-    if (typingLoop.isRunning()) {
+    if (typingIntervalMs <= 0) {
+      return;
+    }
+    if (typingTimer) {
       return;
     }
     await ensureStart();
-    typingLoop.start();
+    typingTimer = setInterval(() => {
+      void triggerTyping();
+    }, typingIntervalMs);
   };
 
   const startTypingOnText = async (text?: string) => {
@@ -173,38 +166,20 @@ export function createTypingController(params: {
     if (!trimmed) {
       return;
     }
-    if (
-      silentToken &&
-      (isSilentReplyText(trimmed, silentToken) || isSilentReplyPrefixText(trimmed, silentToken))
-    ) {
+    if (silentToken && isSilentReplyText(trimmed, silentToken)) {
       return;
     }
     refreshTypingTtl();
     await startTypingLoop();
   };
 
-  let dispatchIdleTimer: NodeJS.Timeout | undefined;
-  const DISPATCH_IDLE_GRACE_MS = 10_000;
-
   const markRunComplete = () => {
     runComplete = true;
     maybeStopOnIdle();
-    if (!sealed && !dispatchIdle) {
-      dispatchIdleTimer = setTimeout(() => {
-        if (!sealed && !dispatchIdle) {
-          log?.("typing: dispatch idle not received after run complete; forcing cleanup");
-          cleanup();
-        }
-      }, DISPATCH_IDLE_GRACE_MS);
-    }
   };
 
   const markDispatchIdle = () => {
     dispatchIdle = true;
-    if (dispatchIdleTimer) {
-      clearTimeout(dispatchIdleTimer);
-      dispatchIdleTimer = undefined;
-    }
     maybeStopOnIdle();
   };
 

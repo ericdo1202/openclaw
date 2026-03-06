@@ -37,15 +37,6 @@ function createState(): ConfigState {
   };
 }
 
-function createRequestWithConfigGet() {
-  return vi.fn().mockImplementation(async (method: string) => {
-    if (method === "config.get") {
-      return { config: {}, valid: true, issues: [], raw: "{\n}\n" };
-    }
-    return {};
-  });
-}
-
 describe("applyConfigSnapshot", () => {
   it("does not clobber form edits while dirty", () => {
     const state = createState();
@@ -169,7 +160,12 @@ describe("applyConfig", () => {
   });
 
   it("coerces schema-typed values before config.apply in form mode", async () => {
-    const request = createRequestWithConfigGet();
+    const request = vi.fn().mockImplementation(async (method: string) => {
+      if (method === "config.get") {
+        return { config: {}, valid: true, issues: [], raw: "{\n}\n" };
+      }
+      return {};
+    });
     const state = createState();
     state.connected = true;
     state.client = { request } as unknown as ConfigState["client"];
@@ -213,7 +209,12 @@ describe("applyConfig", () => {
 
 describe("saveConfig", () => {
   it("coerces schema-typed values before config.set in form mode", async () => {
-    const request = createRequestWithConfigGet();
+    const request = vi.fn().mockImplementation(async (method: string) => {
+      if (method === "config.get") {
+        return { config: {}, valid: true, issues: [], raw: "{\n}\n" };
+      }
+      return {};
+    });
     const state = createState();
     state.connected = true;
     state.client = { request } as unknown as ConfigState["client"];
@@ -249,7 +250,12 @@ describe("saveConfig", () => {
   });
 
   it("skips coercion when schema is not an object", async () => {
-    const request = createRequestWithConfigGet();
+    const request = vi.fn().mockImplementation(async (method: string) => {
+      if (method === "config.get") {
+        return { config: {}, valid: true, issues: [], raw: "{\n}\n" };
+      }
+      return {};
+    });
     const state = createState();
     state.connected = true;
     state.client = { request } as unknown as ConfigState["client"];

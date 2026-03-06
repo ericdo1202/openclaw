@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, vi } from "vitest";
 
 // Ensure Vitest environment is properly set
 process.env.VITEST = "true";
@@ -25,15 +25,12 @@ import { withIsolatedTestHome } from "./test-env.js";
 const testEnv = withIsolatedTestHome();
 afterAll(() => testEnv.cleanup());
 
-const [
-  { installProcessWarningFilter },
-  { getActivePluginRegistry, setActivePluginRegistry },
-  { createTestRegistry },
-] = await Promise.all([
-  import("../src/infra/warning-filter.js"),
-  import("../src/plugins/runtime.js"),
-  import("../src/test-utils/channel-plugins.js"),
-]);
+const [{ installProcessWarningFilter }, { setActivePluginRegistry }, { createTestRegistry }] =
+  await Promise.all([
+    import("../src/infra/warning-filter.js"),
+    import("../src/plugins/runtime.js"),
+    import("../src/test-utils/channel-plugins.js"),
+  ]);
 
 installProcessWarningFilter();
 
@@ -175,18 +172,16 @@ const createDefaultRegistry = () =>
     },
   ]);
 
-// Creating a fresh registry before every test is measurable overhead.
-// The registry is immutable by default; tests that override it are restored in afterEach.
+// Creating a fresh registry before every single test was measurable overhead.
+// The registry is treated as immutable by production code; tests that need a
+// custom registry set it explicitly.
 const DEFAULT_PLUGIN_REGISTRY = createDefaultRegistry();
 
-beforeAll(() => {
+beforeEach(() => {
   setActivePluginRegistry(DEFAULT_PLUGIN_REGISTRY);
 });
 
 afterEach(() => {
-  if (getActivePluginRegistry() !== DEFAULT_PLUGIN_REGISTRY) {
-    setActivePluginRegistry(DEFAULT_PLUGIN_REGISTRY);
-  }
   // Guard against leaked fake timers across test files/workers.
   if (vi.isFakeTimers()) {
     vi.useRealTimers();

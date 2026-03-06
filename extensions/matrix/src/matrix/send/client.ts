@@ -32,19 +32,19 @@ function findAccountConfig(
   return undefined;
 }
 
-export function resolveMediaMaxBytes(accountId?: string, cfg?: CoreConfig): number | undefined {
-  const resolvedCfg = cfg ?? (getCore().config.loadConfig() as CoreConfig);
+export function resolveMediaMaxBytes(accountId?: string): number | undefined {
+  const cfg = getCore().config.loadConfig() as CoreConfig;
   // Check account-specific config first (case-insensitive key matching)
   const accountConfig = findAccountConfig(
-    resolvedCfg.channels?.matrix?.accounts as Record<string, unknown> | undefined,
+    cfg.channels?.matrix?.accounts as Record<string, unknown> | undefined,
     accountId ?? "",
   );
   if (typeof accountConfig?.mediaMaxMb === "number") {
     return (accountConfig.mediaMaxMb as number) * 1024 * 1024;
   }
   // Fall back to top-level config
-  if (typeof resolvedCfg.channels?.matrix?.mediaMaxMb === "number") {
-    return resolvedCfg.channels.matrix.mediaMaxMb * 1024 * 1024;
+  if (typeof cfg.channels?.matrix?.mediaMaxMb === "number") {
+    return cfg.channels.matrix.mediaMaxMb * 1024 * 1024;
   }
   return undefined;
 }
@@ -53,7 +53,6 @@ export async function resolveMatrixClient(opts: {
   client?: MatrixClient;
   timeoutMs?: number;
   accountId?: string;
-  cfg?: CoreConfig;
 }): Promise<{ client: MatrixClient; stopOnDone: boolean }> {
   ensureNodeRuntime();
   if (opts.client) {
@@ -85,11 +84,10 @@ export async function resolveMatrixClient(opts: {
     const client = await resolveSharedMatrixClient({
       timeoutMs: opts.timeoutMs,
       accountId,
-      cfg: opts.cfg,
     });
     return { client, stopOnDone: false };
   }
-  const auth = await resolveMatrixAuth({ accountId, cfg: opts.cfg });
+  const auth = await resolveMatrixAuth({ accountId });
   const client = await createPreparedMatrixClient({
     auth,
     timeoutMs: opts.timeoutMs,

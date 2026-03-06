@@ -1,4 +1,4 @@
-import type { ChannelMeta, ChannelPlugin, ClawdbotConfig } from "openclaw/plugin-sdk/feishu";
+import type { ChannelMeta, ChannelPlugin, ClawdbotConfig } from "openclaw/plugin-sdk";
 import {
   buildBaseChannelStatusSummary,
   createDefaultChannelRuntimeState,
@@ -6,7 +6,7 @@ import {
   PAIRING_APPROVED_MESSAGE,
   resolveAllowlistProviderRuntimeGroupPolicy,
   resolveDefaultGroupPolicy,
-} from "openclaw/plugin-sdk/feishu";
+} from "openclaw/plugin-sdk";
 import {
   resolveFeishuAccount,
   resolveFeishuCredentials,
@@ -37,22 +37,6 @@ const meta: ChannelMeta = {
   aliases: ["lark"],
   order: 70,
 };
-
-const secretInputJsonSchema = {
-  oneOf: [
-    { type: "string" },
-    {
-      type: "object",
-      additionalProperties: false,
-      required: ["source", "provider", "id"],
-      properties: {
-        source: { type: "string", enum: ["env", "file", "exec"] },
-        provider: { type: "string", minLength: 1 },
-        id: { type: "string", minLength: 1 },
-      },
-    },
-  ],
-} as const;
 
 export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
   id: "feishu",
@@ -88,9 +72,6 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
   groups: {
     resolveToolPolicy: resolveFeishuGroupToolPolicy,
   },
-  mentions: {
-    stripPatterns: () => ['<at user_id="[^"]*">[^<]*</at>'],
-  },
   reload: { configPrefixes: ["channels.feishu"] },
   configSchema: {
     schema: {
@@ -98,11 +79,10 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       additionalProperties: false,
       properties: {
         enabled: { type: "boolean" },
-        defaultAccount: { type: "string" },
         appId: { type: "string" },
-        appSecret: secretInputJsonSchema,
+        appSecret: { type: "string" },
         encryptKey: { type: "string" },
-        verificationToken: secretInputJsonSchema,
+        verificationToken: { type: "string" },
         domain: {
           oneOf: [
             { type: "string", enum: ["feishu", "lark"] },
@@ -121,12 +101,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
           items: { oneOf: [{ type: "string" }, { type: "number" }] },
         },
         requireMention: { type: "boolean" },
-        groupSessionScope: {
-          type: "string",
-          enum: ["group", "group_sender", "group_topic", "group_topic_sender"],
-        },
         topicSessionMode: { type: "string", enum: ["disabled", "enabled"] },
-        replyInThread: { type: "string", enum: ["disabled", "enabled"] },
         historyLimit: { type: "integer", minimum: 0 },
         dmHistoryLimit: { type: "integer", minimum: 0 },
         textChunkLimit: { type: "integer", minimum: 1 },
@@ -141,9 +116,9 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
               enabled: { type: "boolean" },
               name: { type: "string" },
               appId: { type: "string" },
-              appSecret: secretInputJsonSchema,
+              appSecret: { type: "string" },
               encryptKey: { type: "string" },
-              verificationToken: secretInputJsonSchema,
+              verificationToken: { type: "string" },
               domain: { type: "string", enum: ["feishu", "lark"] },
               connectionMode: { type: "string", enum: ["websocket", "webhook"] },
               webhookHost: { type: "string" },

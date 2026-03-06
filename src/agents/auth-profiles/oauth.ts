@@ -4,15 +4,11 @@ import {
   type OAuthCredentials,
   type OAuthProvider,
 } from "@mariozechner/pi-ai";
-import { loadConfig, type OpenClawConfig } from "../../config/config.js";
-import { coerceSecretRef } from "../../config/types.secrets.js";
+import type { OpenClawConfig } from "../../config/config.js";
 import { withFileLock } from "../../infra/file-lock.js";
 import { refreshQwenPortalCredentials } from "../../providers/qwen-portal-oauth.js";
-import { resolveSecretRefString, type SecretRefResolveCache } from "../../secrets/resolve.js";
 import { refreshChutesTokens } from "../chutes-oauth.js";
-import { normalizeProviderId } from "../model-selection.js";
 import { AUTH_STORE_LOCK_OPTIONS, log } from "./constants.js";
-import { resolveTokenExpiryState } from "./credential-state.js";
 import { formatAuthDoctorHint } from "./doctor.js";
 import { ensureAuthStoreFile, resolveAuthStorePath } from "./paths.js";
 import { suggestOAuthProfileIdForLegacyDefault } from "./repair.js";
@@ -88,24 +84,9 @@ function buildOAuthProfileResult(params: {
   });
 }
 
-function extractErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function shouldUseOpenaiCodexRefreshFallback(params: {
-  provider: string;
-  credentials: OAuthCredentials;
-  error: unknown;
-}): boolean {
-  if (normalizeProviderId(params.provider) !== "openai-codex") {
-    return false;
-  }
-  const message = extractErrorMessage(params.error);
-  if (!/extract\s+accountid\s+from\s+token/i.test(message)) {
-    return false;
-  }
+function isExpiredCredential(expires: number | undefined): boolean {
   return (
-    typeof params.credentials.access === "string" && params.credentials.access.trim().length > 0
+    typeof expires === "number" && Number.isFinite(expires) && expires > 0 && Date.now() >= expires
   );
 }
 
@@ -115,8 +96,6 @@ type ResolveApiKeyForProfileParams = {
   profileId: string;
   agentDir?: string;
 };
-
-type SecretDefaults = NonNullable<OpenClawConfig["secrets"]>["defaults"];
 
 function adoptNewerMainOAuthCredential(params: {
   store: AuthProfileStore;
@@ -255,57 +234,6 @@ async function tryResolveOAuthProfile(
   });
 }
 
-async function resolveProfileSecretString(params: {
-  profileId: string;
-  provider: string;
-  value: string | undefined;
-  valueRef: unknown;
-  refDefaults: SecretDefaults | undefined;
-  configForRefResolution: OpenClawConfig;
-  cache: SecretRefResolveCache;
-  inlineFailureMessage: string;
-  refFailureMessage: string;
-}): Promise<string | undefined> {
-  let resolvedValue = params.value?.trim();
-  if (resolvedValue) {
-    const inlineRef = coerceSecretRef(resolvedValue, params.refDefaults);
-    if (inlineRef) {
-      try {
-        resolvedValue = await resolveSecretRefString(inlineRef, {
-          config: params.configForRefResolution,
-          env: process.env,
-          cache: params.cache,
-        });
-      } catch (err) {
-        log.debug(params.inlineFailureMessage, {
-          profileId: params.profileId,
-          provider: params.provider,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-  }
-
-  const explicitRef = coerceSecretRef(params.valueRef, params.refDefaults);
-  if (!resolvedValue && explicitRef) {
-    try {
-      resolvedValue = await resolveSecretRefString(explicitRef, {
-        config: params.configForRefResolution,
-        env: process.env,
-        cache: params.cache,
-      });
-    } catch (err) {
-      log.debug(params.refFailureMessage, {
-        profileId: params.profileId,
-        provider: params.provider,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  return resolvedValue;
-}
-
 export async function resolveApiKeyForProfile(
   params: ResolveApiKeyForProfileParams,
 ): Promise<{ apiKey: string; provider: string; email?: string } | null> {
@@ -327,44 +255,19 @@ export async function resolveApiKeyForProfile(
     return null;
   }
 
-  const refResolveCache: SecretRefResolveCache = {};
-  const configForRefResolution = cfg ?? loadConfig();
-  const refDefaults = configForRefResolution.secrets?.defaults;
-
   if (cred.type === "api_key") {
-    const key = await resolveProfileSecretString({
-      profileId,
-      provider: cred.provider,
-      value: cred.key,
-      valueRef: cred.keyRef,
-      refDefaults,
-      configForRefResolution,
-      cache: refResolveCache,
-      inlineFailureMessage: "failed to resolve inline auth profile api_key ref",
-      refFailureMessage: "failed to resolve auth profile api_key ref",
-    });
+    const key = cred.key?.trim();
     if (!key) {
       return null;
     }
     return buildApiKeyProfileResult({ apiKey: key, provider: cred.provider, email: cred.email });
   }
   if (cred.type === "token") {
-    const expiryState = resolveTokenExpiryState(cred.expires);
-    if (expiryState === "expired" || expiryState === "invalid_expires") {
+    const token = cred.token?.trim();
+    if (!token) {
       return null;
     }
-    const token = await resolveProfileSecretString({
-      profileId,
-      provider: cred.provider,
-      value: cred.token,
-      valueRef: cred.tokenRef,
-      refDefaults,
-      configForRefResolution,
-      cache: refResolveCache,
-      inlineFailureMessage: "failed to resolve inline auth profile token ref",
-      refFailureMessage: "failed to resolve auth profile token ref",
-    });
-    if (!token) {
+    if (isExpiredCredential(cred.expires)) {
       return null;
     }
     return buildApiKeyProfileResult({ apiKey: token, provider: cred.provider, email: cred.email });
@@ -456,25 +359,7 @@ export async function resolveApiKeyForProfile(
       }
     }
 
-    if (
-      shouldUseOpenaiCodexRefreshFallback({
-        provider: cred.provider,
-        credentials: cred,
-        error,
-      })
-    ) {
-      log.warn("openai-codex oauth refresh failed; using cached access token fallback", {
-        profileId,
-        provider: cred.provider,
-      });
-      return buildApiKeyProfileResult({
-        apiKey: cred.access,
-        provider: cred.provider,
-        email: cred.email,
-      });
-    }
-
-    const message = extractErrorMessage(error);
+    const message = error instanceof Error ? error.message : String(error);
     const hint = formatAuthDoctorHint({
       cfg,
       store: refreshedStore,

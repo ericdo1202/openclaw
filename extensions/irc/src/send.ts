@@ -8,7 +8,6 @@ import { getIrcRuntime } from "./runtime.js";
 import type { CoreConfig } from "./types.js";
 
 type SendIrcOptions = {
-  cfg?: CoreConfig;
   accountId?: string;
   replyTo?: string;
   target?: string;
@@ -38,7 +37,7 @@ export async function sendMessageIrc(
   opts: SendIrcOptions = {},
 ): Promise<SendIrcResult> {
   const runtime = getIrcRuntime();
-  const cfg = (opts.cfg ?? runtime.config.loadConfig()) as CoreConfig;
+  const cfg = runtime.config.loadConfig() as CoreConfig;
   const account = resolveIrcAccount({
     cfg,
     accountId: opts.accountId,

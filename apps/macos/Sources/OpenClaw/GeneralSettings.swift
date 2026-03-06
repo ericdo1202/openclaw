@@ -260,7 +260,17 @@ struct GeneralSettings: View {
                 TextField("user@host[:22]", text: self.$state.remoteTarget)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: .infinity)
-                self.remoteTestButton(disabled: !canTest)
+                Button {
+                    Task { await self.testRemote() }
+                } label: {
+                    if self.remoteStatus == .checking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Test remote")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(self.remoteStatus == .checking || !canTest)
             }
             if let validationMessage {
                 Text(validationMessage)
@@ -280,29 +290,26 @@ struct GeneralSettings: View {
                 TextField("wss://gateway.example.ts.net", text: self.$state.remoteUrl)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: .infinity)
-                self.remoteTestButton(
-                    disabled: self.state.remoteUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button {
+                    Task { await self.testRemote() }
+                } label: {
+                    if self.remoteStatus == .checking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Test remote")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(self.remoteStatus == .checking || self.state.remoteUrl
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             Text(
-                "Direct mode requires wss:// for remote hosts. ws:// is only allowed for localhost/127.0.0.1.")
+                "Direct mode requires wss:// for remote hosts. ws:// is only allowed for localhost/127.0.0.1."
+            )
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, self.remoteLabelWidth + 10)
         }
-    }
-
-    private func remoteTestButton(disabled: Bool) -> some View {
-        Button {
-            Task { await self.testRemote() }
-        } label: {
-            if self.remoteStatus == .checking {
-                ProgressView().controlSize(.small)
-            } else {
-                Text("Test remote")
-            }
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(self.remoteStatus == .checking || disabled)
     }
 
     private var controlStatusLine: String {
@@ -542,7 +549,8 @@ extension GeneralSettings {
             }
             guard Self.isValidWsUrl(trimmedUrl) else {
                 self.remoteStatus = .failed(
-                    "Gateway URL must use wss:// for remote hosts (ws:// only for localhost)")
+                    "Gateway URL must use wss:// for remote hosts (ws:// only for localhost)"
+                )
                 return
             }
         } else {
@@ -666,7 +674,19 @@ extension GeneralSettings {
 
     private func applyDiscoveredGateway(_ gateway: GatewayDiscoveryModel.DiscoveredGateway) {
         MacNodeModeCoordinator.shared.setPreferredGatewayStableID(gateway.stableID)
-        GatewayDiscoverySelectionSupport.applyRemoteSelection(gateway: gateway, state: self.state)
+
+        if self.state.remoteTransport == .direct {
+            self.state.remoteUrl = GatewayDiscoveryHelpers.directUrl(for: gateway) ?? ""
+        } else {
+            self.state.remoteTarget = GatewayDiscoveryHelpers.sshTarget(for: gateway) ?? ""
+        }
+        if let endpoint = GatewayDiscoveryHelpers.serviceEndpoint(for: gateway) {
+            OpenClawConfigFile.setRemoteGatewayUrl(
+                host: endpoint.host,
+                port: endpoint.port)
+        } else {
+            OpenClawConfigFile.clearRemoteGatewayUrl()
+        }
     }
 }
 

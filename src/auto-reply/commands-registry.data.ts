@@ -265,15 +265,15 @@ function buildChatCommands(): ChatCommandDefinition[] {
     defineChatCommand({
       key: "session",
       nativeName: "session",
-      description: "Manage session-level settings (for example /session idle).",
+      description: "Manage session-level settings (for example /session ttl).",
       textAlias: "/session",
       category: "session",
       args: [
         {
           name: "action",
-          description: "idle | max-age",
+          description: "ttl",
           type: "string",
-          choices: ["idle", "max-age"],
+          choices: ["ttl"],
         },
         {
           name: "value",
@@ -312,50 +312,9 @@ function buildChatCommands(): ChatCommandDefinition[] {
       argsMenu: "auto",
     }),
     defineChatCommand({
-      key: "acp",
-      nativeName: "acp",
-      description: "Manage ACP sessions and runtime options.",
-      textAlias: "/acp",
-      category: "management",
-      args: [
-        {
-          name: "action",
-          description: "Action to run",
-          type: "string",
-          preferAutocomplete: true,
-          choices: [
-            "spawn",
-            "cancel",
-            "steer",
-            "close",
-            "sessions",
-            "status",
-            "set-mode",
-            "set",
-            "cwd",
-            "permissions",
-            "timeout",
-            "model",
-            "reset-options",
-            "doctor",
-            "install",
-            "help",
-          ],
-        },
-        {
-          name: "value",
-          description: "Action arguments",
-          type: "string",
-          captureRemaining: true,
-        },
-      ],
-      argsMenu: "auto",
-    }),
-    defineChatCommand({
       key: "focus",
       nativeName: "focus",
-      description:
-        "Bind this thread (Discord) or topic/conversation (Telegram) to a session target.",
+      description: "Bind this Discord thread (or a new one) to a session target.",
       textAlias: "/focus",
       category: "management",
       args: [
@@ -370,7 +329,7 @@ function buildChatCommands(): ChatCommandDefinition[] {
     defineChatCommand({
       key: "unfocus",
       nativeName: "unfocus",
-      description: "Remove the current thread (Discord) or topic/conversation (Telegram) binding.",
+      description: "Remove the current Discord thread binding.",
       textAlias: "/unfocus",
       category: "management",
     }),

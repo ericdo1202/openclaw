@@ -170,7 +170,6 @@ describe("agent components", () => {
     const select = createAgentSelectMenu({
       cfg: createCfg(),
       accountId: "default",
-      discordConfig: { dangerouslyAllowNameMatching: true } as DiscordAccountConfig,
       dmPolicy: "allowlist",
       allowFrom: ["Alice#1234"],
     });
@@ -181,44 +180,6 @@ describe("agent components", () => {
     expect(defer).toHaveBeenCalledWith({ ephemeral: true });
     expect(reply).toHaveBeenCalledWith({ content: "✓" });
     expect(enqueueSystemEventMock).toHaveBeenCalled();
-  });
-
-  it("accepts cid payloads for agent button interactions", async () => {
-    const button = createAgentComponentButton({
-      cfg: createCfg(),
-      accountId: "default",
-      dmPolicy: "allowlist",
-      allowFrom: ["123456789"],
-    });
-    const { interaction, defer, reply } = createDmButtonInteraction();
-
-    await button.run(interaction, { cid: "hello_cid" } as ComponentData);
-
-    expect(defer).toHaveBeenCalledWith({ ephemeral: true });
-    expect(reply).toHaveBeenCalledWith({ content: "✓" });
-    expect(enqueueSystemEventMock).toHaveBeenCalledWith(
-      expect.stringContaining("hello_cid"),
-      expect.any(Object),
-    );
-  });
-
-  it("keeps malformed percent cid values without throwing", async () => {
-    const button = createAgentComponentButton({
-      cfg: createCfg(),
-      accountId: "default",
-      dmPolicy: "allowlist",
-      allowFrom: ["123456789"],
-    });
-    const { interaction, defer, reply } = createDmButtonInteraction();
-
-    await button.run(interaction, { cid: "hello%2G" } as ComponentData);
-
-    expect(defer).toHaveBeenCalledWith({ ephemeral: true });
-    expect(reply).toHaveBeenCalledWith({ content: "✓" });
-    expect(enqueueSystemEventMock).toHaveBeenCalledWith(
-      expect.stringContaining("hello%2G"),
-      expect.any(Object),
-    );
   });
 });
 
@@ -429,70 +390,6 @@ describe("discord component interactions", () => {
     expect(resolveDiscordModalEntry({ id: "mdl_1" })).toBeNull();
   });
 
-  it("does not mark guild modal events as command-authorized for non-allowlisted users", async () => {
-    registerDiscordComponentEntries({
-      entries: [],
-      modals: [createModalEntry()],
-    });
-
-    const modal = createDiscordComponentModal(
-      createComponentContext({
-        cfg: {
-          commands: { useAccessGroups: true },
-          channels: { discord: { replyToMode: "first" } },
-        } as OpenClawConfig,
-        allowFrom: ["owner-1"],
-      }),
-    );
-    const { interaction, acknowledge } = createModalInteraction({
-      rawData: {
-        channel_id: "guild-channel",
-        guild_id: "guild-1",
-        id: "interaction-guild-1",
-        member: { roles: [] },
-      } as unknown as ModalInteraction["rawData"],
-      guild: { id: "guild-1", name: "Test Guild" } as unknown as ModalInteraction["guild"],
-    });
-
-    await modal.run(interaction, { mid: "mdl_1" } as ComponentData);
-
-    expect(acknowledge).toHaveBeenCalledTimes(1);
-    expect(dispatchReplyMock).toHaveBeenCalledTimes(1);
-    expect(lastDispatchCtx?.CommandAuthorized).toBe(false);
-  });
-
-  it("marks guild modal events as command-authorized for allowlisted users", async () => {
-    registerDiscordComponentEntries({
-      entries: [],
-      modals: [createModalEntry()],
-    });
-
-    const modal = createDiscordComponentModal(
-      createComponentContext({
-        cfg: {
-          commands: { useAccessGroups: true },
-          channels: { discord: { replyToMode: "first" } },
-        } as OpenClawConfig,
-        allowFrom: ["123456789"],
-      }),
-    );
-    const { interaction, acknowledge } = createModalInteraction({
-      rawData: {
-        channel_id: "guild-channel",
-        guild_id: "guild-1",
-        id: "interaction-guild-2",
-        member: { roles: [] },
-      } as unknown as ModalInteraction["rawData"],
-      guild: { id: "guild-1", name: "Test Guild" } as unknown as ModalInteraction["guild"],
-    });
-
-    await modal.run(interaction, { mid: "mdl_1" } as ComponentData);
-
-    expect(acknowledge).toHaveBeenCalledTimes(1);
-    expect(dispatchReplyMock).toHaveBeenCalledTimes(1);
-    expect(lastDispatchCtx?.CommandAuthorized).toBe(true);
-  });
-
   it("keeps reusable modal entries active after submission", async () => {
     const { acknowledge } = await runModalSubmission({ reusable: true });
 
@@ -529,20 +426,13 @@ describe("resolveDiscordOwnerAllowFrom", () => {
     expect(result).toEqual(["123"]);
   });
 
-  it("returns the normalized name slug for name matches only when enabled", () => {
-    const defaultResult = resolveDiscordOwnerAllowFrom({
+  it("returns the normalized name slug for name matches", () => {
+    const result = resolveDiscordOwnerAllowFrom({
       channelConfig: { allowed: true, users: ["Some User"] } as DiscordChannelConfigResolved,
       sender: { id: "999", name: "Some User" },
     });
-    expect(defaultResult).toBeUndefined();
 
-    const enabledResult = resolveDiscordOwnerAllowFrom({
-      channelConfig: { allowed: true, users: ["Some User"] } as DiscordChannelConfigResolved,
-      sender: { id: "999", name: "Some User" },
-      allowNameMatching: true,
-    });
-
-    expect(enabledResult).toEqual(["some-user"]);
+    expect(result).toEqual(["some-user"]);
   });
 });
 
@@ -711,13 +601,8 @@ describe("presence-cache", () => {
 });
 
 describe("resolveDiscordPresenceUpdate", () => {
-  it("returns default online presence when no presence config provided", () => {
-    expect(resolveDiscordPresenceUpdate({})).toEqual({
-      status: "online",
-      activities: [],
-      since: null,
-      afk: false,
-    });
+  it("returns null when no presence config provided", () => {
+    expect(resolveDiscordPresenceUpdate({})).toBeNull();
   });
 
   it("returns status-only presence when activity is omitted", () => {

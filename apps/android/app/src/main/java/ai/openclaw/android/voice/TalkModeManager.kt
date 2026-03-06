@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
@@ -24,18 +23,14 @@ import androidx.core.content.ContextCompat
 import ai.openclaw.android.gateway.GatewaySession
 import ai.openclaw.android.isCanonicalMainSessionKey
 import ai.openclaw.android.normalizeMainKey
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -59,52 +54,6 @@ class TalkModeManager(
     private const val tag = "TalkMode"
     private const val defaultModelIdFallback = "eleven_v3"
     private const val defaultOutputFormatFallback = "pcm_24000"
-private const val defaultTalkProvider = "elevenlabs"
-    private const val silenceWindowMs = 500L
-    private const val listenWatchdogMs = 12_000L
-    private const val chatFinalWaitWithSubscribeMs = 45_000L
-    private const val chatFinalWaitWithoutSubscribeMs = 6_000L
-    private const val maxCachedRunCompletions = 128
-
-    internal data class TalkProviderConfigSelection(
-      val provider: String,
-      val config: JsonObject,
-      val normalizedPayload: Boolean,
-    )
-
-    private fun normalizeTalkProviderId(raw: String?): String? {
-      val trimmed = raw?.trim()?.lowercase().orEmpty()
-      return trimmed.takeIf { it.isNotEmpty() }
-    }
-
-    internal fun selectTalkProviderConfig(talk: JsonObject?): TalkProviderConfigSelection? {
-      if (talk == null) return null
-      val rawProvider = talk["provider"].asStringOrNull()
-      val rawProviders = talk["providers"].asObjectOrNull()
-      val hasNormalizedPayload = rawProvider != null || rawProviders != null
-      if (hasNormalizedPayload) {
-        val providers =
-          rawProviders?.entries?.mapNotNull { (key, value) ->
-            val providerId = normalizeTalkProviderId(key) ?: return@mapNotNull null
-            val providerConfig = value.asObjectOrNull() ?: return@mapNotNull null
-            providerId to providerConfig
-          }?.toMap().orEmpty()
-        val providerId =
-          normalizeTalkProviderId(rawProvider)
-            ?: providers.keys.sorted().firstOrNull()
-            ?: defaultTalkProvider
-        return TalkProviderConfigSelection(
-          provider = providerId,
-          config = providers[providerId] ?: buildJsonObject {},
-          normalizedPayload = true,
-        )
-      }
-      return TalkProviderConfigSelection(
-        provider = defaultTalkProvider,
-        config = talk,
-        normalizedPayload = false,
-      )
-    }
   }
 
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -148,54 +97,22 @@ private const val defaultTalkProvider = "elevenlabs"
   private var defaultOutputFormat: String? = null
   private var apiKey: String? = null
   private var voiceAliases: Map<String, String> = emptyMap()
-  // Interrupt-on-speech is disabled by default: starting a SpeechRecognizer during
-  // TTS creates an audio session conflict on OxygenOS/OnePlus that causes AudioTrack
-  // write to return 0 and MediaPlayer to error. Can be enabled via gateway talk config.
-  private var activeProviderIsElevenLabs: Boolean = true
-  private var interruptOnSpeech: Boolean = false
+  private var interruptOnSpeech: Boolean = true
   private var voiceOverrideActive = false
   private var modelOverrideActive = false
   private var mainSessionKey: String = "main"
 
-  @Volatile private var pendingRunId: String? = null
+  private var pendingRunId: String? = null
   private var pendingFinal: CompletableDeferred<Boolean>? = null
-  private val completedRunsLock = Any()
-  private val completedRunStates = LinkedHashMap<String, Boolean>()
-  private val completedRunTexts = LinkedHashMap<String, String>()
   private var chatSubscribedSessionKey: String? = null
-  private var configLoaded = false
-  @Volatile private var playbackEnabled = true
-  private val playbackGeneration = AtomicLong(0L)
 
-  private var ttsJob: Job? = null
   private var player: MediaPlayer? = null
   private var streamingSource: StreamingMediaDataSource? = null
   private var pcmTrack: AudioTrack? = null
   @Volatile private var pcmStopRequested = false
-  @Volatile private var finalizeInFlight = false
-  private var listenWatchdogJob: Job? = null
   private var systemTts: TextToSpeech? = null
   private var systemTtsPending: CompletableDeferred<Unit>? = null
   private var systemTtsPendingId: String? = null
-
-  private var audioFocusRequest: AudioFocusRequest? = null
-  private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-    when (focusChange) {
-      AudioManager.AUDIOFOCUS_LOSS,
-      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-        if (_isSpeaking.value) {
-          Log.d(tag, "audio focus lost; stopping TTS")
-          stopSpeaking(resetInterrupt = true)
-        }
-      }
-      else -> { /* regained or duck — ignore */ }
-    }
-  }
-
-  suspend fun ensureChatSubscribed() {
-    reloadConfig()
-    subscribeChatIfNeeded(session = session, sessionKey = mainSessionKey.ifBlank { "main" })
-  }
 
   fun setMainSessionKey(sessionKey: String?) {
     val trimmed = sessionKey?.trim().orEmpty()
@@ -216,174 +133,10 @@ private const val defaultTalkProvider = "elevenlabs"
     }
   }
 
-  /**
-   * Speak a wake-word command through TalkMode's full pipeline:
-   * chat.send → wait for final → read assistant text → TTS.
-   * Calls [onComplete] when done so the caller can disable TalkMode and re-arm VoiceWake.
-   */
-  fun speakWakeCommand(command: String, onComplete: () -> Unit) {
-    scope.launch {
-      try {
-        reloadConfig()
-        subscribeChatIfNeeded(session = session, sessionKey = mainSessionKey.ifBlank { "main" })
-        val startedAt = System.currentTimeMillis().toDouble() / 1000.0
-        val prompt = buildPrompt(command)
-        val runId = sendChat(prompt, session)
-        val ok = waitForChatFinal(runId)
-        val assistant = consumeRunText(runId)
-          ?: waitForAssistantText(session, startedAt, if (ok) 12_000 else 25_000)
-        if (!assistant.isNullOrBlank()) {
-          val playbackToken = playbackGeneration.incrementAndGet()
-          _statusText.value = "Speaking…"
-          playAssistant(assistant, playbackToken)
-        } else {
-          _statusText.value = "No reply"
-        }
-      } catch (err: Throwable) {
-        Log.w(tag, "speakWakeCommand failed: ${err.message}")
-      }
-      onComplete()
-    }
-  }
-
-  /** When true, play TTS for all final chat responses (even ones we didn't initiate). */
-  @Volatile var ttsOnAllResponses = false
-
-  // Streaming TTS: active session keyed by runId
-  private var streamingTts: ElevenLabsStreamingTts? = null
-  private var streamingFullText: String = ""
-  @Volatile private var lastHandledStreamingRunId: String? = null
-  private var drainingTts: ElevenLabsStreamingTts? = null
-
-  private fun stopActiveStreamingTts() {
-    streamingTts?.stop()
-    streamingTts = null
-    drainingTts?.stop()
-    drainingTts = null
-    streamingFullText = ""
-  }
-
-  /** Handle agent stream events — only speak assistant text, not tool calls or thinking. */
-  private fun handleAgentStreamEvent(payloadJson: String?) {
-    if (payloadJson.isNullOrBlank()) return
-    val payload = try {
-      json.parseToJsonElement(payloadJson).asObjectOrNull()
-    } catch (_: Throwable) { null } ?: return
-
-    // Only speak events for the active session — prevents TTS leaking from
-    // concurrent sessions/channels (privacy + correctness).
-    val eventSession = payload["sessionKey"]?.asStringOrNull()
-    val activeSession = mainSessionKey.ifBlank { "main" }
-    if (eventSession != null && eventSession != activeSession) return
-
-    val stream = payload["stream"]?.asStringOrNull() ?: return
-    if (stream != "assistant") return  // Only speak assistant text
-    val data = payload["data"]?.asObjectOrNull() ?: return
-    if (data["type"]?.asStringOrNull() == "thinking") return  // Skip thinking tokens
-    val text = data["text"]?.asStringOrNull()?.trim() ?: return
-    if (text.isEmpty()) return
-    if (!playbackEnabled) {
-      stopActiveStreamingTts()
-      return
-    }
-
-    // Start streaming session if not already active
-    if (streamingTts == null) {
-      if (!activeProviderIsElevenLabs) return  // Non-ElevenLabs provider — skip streaming TTS
-      val voiceId = currentVoiceId ?: defaultVoiceId
-      val apiKey = this.apiKey
-      if (voiceId == null || apiKey == null) {
-        Log.w(tag, "streaming TTS: missing voiceId or apiKey")
-        return
-      }
-      val modelId = currentModelId ?: defaultModelId ?: ""
-      val streamModel = if (ElevenLabsStreamingTts.supportsStreaming(modelId)) {
-        modelId
-      } else {
-        "eleven_flash_v2_5"
-      }
-      val tts = ElevenLabsStreamingTts(
-        scope = scope,
-        voiceId = voiceId,
-        apiKey = apiKey,
-        modelId = streamModel,
-        outputFormat = "pcm_24000",
-        sampleRate = 24000,
-      )
-      streamingTts = tts
-      streamingFullText = ""
-      _isSpeaking.value = true
-      _statusText.value = "Speaking…"
-      tts.start()
-      Log.d(tag, "streaming TTS started for agent assistant text")
-      lastHandledStreamingRunId = null  // will be set on final
-    }
-
-    val accepted = streamingTts?.sendText(text) ?: false
-    if (!accepted && streamingTts != null) {
-      Log.d(tag, "text diverged, restarting streaming TTS")
-      streamingTts?.stop()
-      streamingTts = null
-      // Restart with the new text
-      val voiceId2 = currentVoiceId ?: defaultVoiceId
-      val apiKey2 = this.apiKey
-      if (voiceId2 != null && apiKey2 != null) {
-        val modelId2 = currentModelId ?: defaultModelId ?: ""
-        val streamModel2 = if (ElevenLabsStreamingTts.supportsStreaming(modelId2)) modelId2 else "eleven_flash_v2_5"
-        val newTts = ElevenLabsStreamingTts(
-          scope = scope, voiceId = voiceId2, apiKey = apiKey2,
-          modelId = streamModel2, outputFormat = "pcm_24000", sampleRate = 24000,
-        )
-        streamingTts = newTts
-        streamingFullText = text
-        newTts.start()
-        newTts.sendText(streamingFullText)
-        Log.d(tag, "streaming TTS restarted with new text")
-      }
-    }
-  }
-
-  /** Called when chat final/error/aborted arrives — finish any active streaming TTS. */
-  private fun finishStreamingTts() {
-    streamingFullText = ""
-    val tts = streamingTts ?: return
-    // Null out immediately so the next response creates a fresh TTS instance.
-    // The drain coroutine below holds a reference to this instance for cleanup.
-    streamingTts = null
-    drainingTts = tts
-    tts.finish()
-    scope.launch {
-      delay(500)
-      while (tts.isPlaying.value) { delay(200) }
-      if (drainingTts === tts) drainingTts = null
-      _isSpeaking.value = false
-      _statusText.value = "Ready"
-    }
-  }
-
-  fun playTtsForText(text: String) {
-    val playbackToken = playbackGeneration.incrementAndGet()
-    ttsJob?.cancel()
-    ttsJob = scope.launch {
-      reloadConfig()
-      ensurePlaybackActive(playbackToken)
-      _isSpeaking.value = true
-      _statusText.value = "Speaking…"
-      playAssistant(text, playbackToken)
-      ttsJob = null
-    }
-  }
-
   fun handleGatewayEvent(event: String, payloadJson: String?) {
-    if (ttsOnAllResponses) {
-      Log.d(tag, "gateway event: $event")
-    }
-    if (event == "agent" && ttsOnAllResponses) {
-      handleAgentStreamEvent(payloadJson)
-      return
-    }
     if (event != "chat") return
     if (payloadJson.isNullOrBlank()) return
+    val pending = pendingRunId ?: return
     val obj =
       try {
         json.parseToJsonElement(payloadJson).asObjectOrNull()
@@ -391,91 +144,13 @@ private const val defaultTalkProvider = "elevenlabs"
         null
       } ?: return
     val runId = obj["runId"].asStringOrNull() ?: return
+    if (runId != pending) return
     val state = obj["state"].asStringOrNull() ?: return
-
-    // Only speak events for the active session — prevents TTS from other
-    // sessions/channels leaking into voice mode (privacy + correctness).
-    val eventSession = obj["sessionKey"]?.asStringOrNull()
-    val activeSession = mainSessionKey.ifBlank { "main" }
-    if (eventSession != null && eventSession != activeSession) return
-
-    // If this is a response we initiated, handle normally below.
-    // Otherwise, if ttsOnAllResponses, finish streaming TTS on terminal events.
-    val pending = pendingRunId
-    if (pending == null || runId != pending) {
-      if (ttsOnAllResponses && state in listOf("final", "error", "aborted")) {
-        // Skip if we already handled TTS for this run (multiple final events
-        // can arrive on different threads for the same run).
-        if (lastHandledStreamingRunId == runId) {
-          if (pending == null || runId != pending) return
-        }
-        lastHandledStreamingRunId = runId
-        val stts = streamingTts
-        if (stts != null) {
-          // Finish streaming and let the drain coroutine handle playback completion.
-          // Don’t check hasReceivedAudio synchronously — audio may still be in flight
-          // from the WebSocket (EOS was just sent). The drain coroutine in finishStreamingTts
-          // waits for playback to complete; if ElevenLabs truly fails, the user just won’t
-          // hear anything (silent failure is better than double-speaking with system TTS).
-          finishStreamingTts()
-        } else if (state == "final") {
-          // No streaming was active — fall back to non-streaming
-          val text = extractTextFromChatEventMessage(obj["message"])
-          if (!text.isNullOrBlank()) {
-            playTtsForText(text)
-          }
-        }
-      }
-      if (pending == null || runId != pending) return
+    if (state == "final") {
+      pendingFinal?.complete(true)
+      pendingFinal = null
+      pendingRunId = null
     }
-    Log.d(tag, "chat event arrived runId=$runId state=$state pendingRunId=$pendingRunId")
-    val terminal =
-      when (state) {
-        "final" -> true
-        "aborted", "error" -> false
-        else -> null
-      } ?: return
-    // Cache text from final event so we never need to poll chat.history
-    if (terminal) {
-      val text = extractTextFromChatEventMessage(obj["message"])
-      if (!text.isNullOrBlank()) {
-        synchronized(completedRunsLock) {
-          completedRunTexts[runId] = text
-          while (completedRunTexts.size > maxCachedRunCompletions) {
-            completedRunTexts.entries.firstOrNull()?.let { completedRunTexts.remove(it.key) }
-          }
-        }
-      }
-    }
-    cacheRunCompletion(runId, terminal)
-
-    if (runId != pendingRunId) return
-    pendingFinal?.complete(terminal)
-    pendingFinal = null
-    pendingRunId = null
-  }
-
-  fun setPlaybackEnabled(enabled: Boolean) {
-    if (playbackEnabled == enabled) return
-    playbackEnabled = enabled
-    if (!enabled) {
-      playbackGeneration.incrementAndGet()
-      stopActiveStreamingTts()
-      stopSpeaking()
-    }
-  }
-
-  suspend fun refreshConfig() {
-    reloadConfig()
-  }
-
-  suspend fun speakAssistantReply(text: String) {
-    if (!playbackEnabled) return
-    val playbackToken = playbackGeneration.incrementAndGet()
-    stopSpeaking(resetInterrupt = false)
-    ensureConfigLoaded()
-    ensurePlaybackActive(playbackToken)
-    playAssistant(text, playbackToken)
   }
 
   private fun start() {
@@ -515,7 +190,6 @@ private const val defaultTalkProvider = "elevenlabs"
 
   private fun stop() {
     stopRequested = true
-    finalizeInFlight = false
     listeningMode = false
     restartJob?.cancel()
     restartJob = null
@@ -528,13 +202,6 @@ private const val defaultTalkProvider = "elevenlabs"
     stopSpeaking()
     _usingFallbackTts.value = false
     chatSubscribedSessionKey = null
-    pendingRunId = null
-    pendingFinal?.cancel()
-    pendingFinal = null
-    synchronized(completedRunsLock) {
-      completedRunStates.clear()
-      completedRunTexts.clear()
-    }
 
     mainHandler.post {
       recognizer?.cancel()
@@ -555,10 +222,6 @@ private const val defaultTalkProvider = "elevenlabs"
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-        // Use cloud recognition — it handles natural speech and pauses better
-        // than on-device which cuts off aggressively after short silences.
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
       }
 
     if (markListening) {
@@ -578,8 +241,8 @@ private const val defaultTalkProvider = "elevenlabs"
           if (stopRequested) return@post
           try {
             recognizer?.cancel()
-            val shouldListen = listeningMode && !finalizeInFlight
-            val shouldInterrupt = _isSpeaking.value && interruptOnSpeech && shouldAllowSpeechInterrupt()
+            val shouldListen = listeningMode
+            val shouldInterrupt = _isSpeaking.value && interruptOnSpeech
             if (!shouldListen && !shouldInterrupt) return@post
             startListeningInternal(markListening = shouldListen)
           } catch (_: Throwable) {
@@ -607,9 +270,6 @@ private const val defaultTalkProvider = "elevenlabs"
 
     if (isFinal) {
       lastTranscript = trimmed
-      // Don't finalize immediately — let the silence monitor trigger after
-      // silenceWindowMs. This allows the recognizer to fire onResults and
-      // still give the user a natural pause before we send.
     }
   }
 
@@ -631,15 +291,7 @@ private const val defaultTalkProvider = "elevenlabs"
     val lastHeard = lastHeardAtMs ?: return
     val elapsed = SystemClock.elapsedRealtime() - lastHeard
     if (elapsed < silenceWindowMs) return
-    if (finalizeInFlight) return
-    finalizeInFlight = true
-    scope.launch {
-      try {
-        finalizeTranscript(transcript)
-      } finally {
-        finalizeInFlight = false
-      }
-    }
+    scope.launch { finalizeTranscript(transcript) }
   }
 
   private suspend fun finalizeTranscript(transcript: String) {
@@ -648,18 +300,8 @@ private const val defaultTalkProvider = "elevenlabs"
     _statusText.value = "Thinking…"
     lastTranscript = ""
     lastHeardAtMs = null
-    // Release SpeechRecognizer before making the API call and playing TTS.
-    // Must use withContext(Main) — not post() — so we WAIT for destruction before
-    // proceeding. A fire-and-forget post() races with TTS startup: the recognizer
-    // stays alive, picks up TTS audio as speech (onBeginningOfSpeech), and the
-    // OS kills the AudioTrack write (returns 0) on OxygenOS/OnePlus devices.
-    withContext(Dispatchers.Main) {
-      recognizer?.cancel()
-      recognizer?.destroy()
-      recognizer = null
-    }
 
-    ensureConfigLoaded()
+    reloadConfig()
     val prompt = buildPrompt(transcript)
     if (!isConnected()) {
       _statusText.value = "Gateway not connected"
@@ -678,9 +320,7 @@ private const val defaultTalkProvider = "elevenlabs"
       if (!ok) {
         Log.w(tag, "chat final timeout runId=$runId; attempting history fallback")
       }
-      // Use text cached from the final event first — avoids chat.history polling
-      val assistant = consumeRunText(runId)
-        ?: waitForAssistantText(session, startedAt, if (ok) 12_000 else 25_000)
+      val assistant = waitForAssistantText(session, startedAt, if (ok) 12_000 else 25_000)
       if (assistant.isNullOrBlank()) {
         _statusText.value = "No reply"
         Log.w(tag, "assistant text timeout runId=$runId")
@@ -688,15 +328,8 @@ private const val defaultTalkProvider = "elevenlabs"
         return
       }
       Log.d(tag, "assistant text ok chars=${assistant.length}")
-      val playbackToken = playbackGeneration.incrementAndGet()
-      stopSpeaking(resetInterrupt = false)
-      ensurePlaybackActive(playbackToken)
-      playAssistant(assistant, playbackToken)
+      playAssistant(assistant)
     } catch (err: Throwable) {
-      if (err is CancellationException) {
-        Log.d(tag, "finalize speech cancelled")
-        return
-      }
       _statusText.value = "Talk failed: ${err.message ?: err::class.simpleName}"
       Log.w(tag, "finalize failed: ${err.message ?: err::class.simpleName}")
     }
@@ -711,12 +344,12 @@ private const val defaultTalkProvider = "elevenlabs"
     val key = sessionKey.trim()
     if (key.isEmpty()) return
     if (chatSubscribedSessionKey == key) return
-    val sent = session.sendNodeEvent("chat.subscribe", """{"sessionKey":"$key"}""")
-    if (sent) {
+    try {
+      session.sendNodeEvent("chat.subscribe", """{"sessionKey":"$key"}""")
       chatSubscribedSessionKey = key
       Log.d(tag, "chat.subscribe ok sessionKey=$key")
-    } else {
-      Log.w(tag, "chat.subscribe failed sessionKey=$key")
+    } catch (err: Throwable) {
+      Log.w(tag, "chat.subscribe failed sessionKey=$key err=${err.message ?: err::class.java.simpleName}")
     }
   }
 
@@ -774,36 +407,6 @@ private const val defaultTalkProvider = "elevenlabs"
     return result
   }
 
-  private fun cacheRunCompletion(runId: String, isFinal: Boolean) {
-    synchronized(completedRunsLock) {
-      completedRunStates[runId] = isFinal
-      while (completedRunStates.size > maxCachedRunCompletions) {
-        val first = completedRunStates.entries.firstOrNull() ?: break
-        completedRunStates.remove(first.key)
-      }
-    }
-  }
-
-  private fun consumeRunCompletion(runId: String): Boolean? {
-    synchronized(completedRunsLock) {
-      return completedRunStates.remove(runId)
-    }
-  }
-
-  private fun consumeRunText(runId: String): String? {
-    synchronized(completedRunsLock) {
-      return completedRunTexts.remove(runId)
-    }
-  }
-
-  private fun extractTextFromChatEventMessage(messageEl: JsonElement?): String? {
-    val msg = messageEl?.asObjectOrNull() ?: return null
-    val content = msg["content"] as? JsonArray ?: return null
-    return content.mapNotNull { entry ->
-      entry.asObjectOrNull()?.get("text")?.asStringOrNull()?.trim()
-    }.filter { it.isNotEmpty() }.joinToString("\n").takeIf { it.isNotBlank() }
-  }
-
   private suspend fun waitForAssistantText(
     session: GatewaySession,
     sinceSeconds: Double,
@@ -843,7 +446,7 @@ private const val defaultTalkProvider = "elevenlabs"
     return null
   }
 
-  private suspend fun playAssistant(text: String, playbackToken: Long) {
+  private suspend fun playAssistant(text: String) {
     val parsed = TalkDirectiveParser.parse(text)
     if (parsed.unknownKeys.isNotEmpty()) {
       Log.w(tag, "Unknown talk directive keys: ${parsed.unknownKeys}")
@@ -871,7 +474,6 @@ private const val defaultTalkProvider = "elevenlabs"
         modelOverrideActive = true
       }
     }
-    ensurePlaybackActive(playbackToken)
 
     val apiKey =
       apiKey?.trim()?.takeIf { it.isNotEmpty() }
@@ -888,7 +490,6 @@ private const val defaultTalkProvider = "elevenlabs"
     _isSpeaking.value = true
     lastSpokenText = cleaned
     ensureInterruptListener()
-    requestAudioFocusForTts()
 
     try {
       val canUseElevenLabs = !voiceId.isNullOrBlank() && !apiKey.isNullOrEmpty()
@@ -899,10 +500,9 @@ private const val defaultTalkProvider = "elevenlabs"
         if (apiKey.isNullOrEmpty()) {
           Log.w(tag, "missing ELEVENLABS_API_KEY; falling back to system voice")
         }
-        ensurePlaybackActive(playbackToken)
         _usingFallbackTts.value = true
         _statusText.value = "Speaking (System)…"
-        speakWithSystemTts(cleaned, playbackToken)
+        speakWithSystemTts(cleaned)
       } else {
         _usingFallbackTts.value = false
         val ttsStarted = SystemClock.elapsedRealtime()
@@ -923,78 +523,43 @@ private const val defaultTalkProvider = "elevenlabs"
             language = TalkModeRuntime.validatedLanguage(directive?.language),
             latencyTier = TalkModeRuntime.validatedLatencyTier(directive?.latencyTier),
           )
-        streamAndPlay(voiceId = voiceId!!, apiKey = apiKey!!, request = request, playbackToken = playbackToken)
+        streamAndPlay(voiceId = voiceId!!, apiKey = apiKey!!, request = request)
         Log.d(tag, "elevenlabs stream ok durMs=${SystemClock.elapsedRealtime() - ttsStarted}")
       }
     } catch (err: Throwable) {
-      if (isPlaybackCancelled(err, playbackToken)) {
-        Log.d(tag, "assistant speech cancelled")
-        return
-      }
       Log.w(tag, "speak failed: ${err.message ?: err::class.simpleName}; falling back to system voice")
       try {
-        ensurePlaybackActive(playbackToken)
         _usingFallbackTts.value = true
         _statusText.value = "Speaking (System)…"
-        speakWithSystemTts(cleaned, playbackToken)
+        speakWithSystemTts(cleaned)
       } catch (fallbackErr: Throwable) {
-        if (isPlaybackCancelled(fallbackErr, playbackToken)) {
-          Log.d(tag, "assistant fallback speech cancelled")
-          return
-        }
         _statusText.value = "Speak failed: ${fallbackErr.message ?: fallbackErr::class.simpleName}"
         Log.w(tag, "system voice failed: ${fallbackErr.message ?: fallbackErr::class.simpleName}")
       }
-    } finally {
-
-      _isSpeaking.value = false
     }
+
+    _isSpeaking.value = false
   }
 
-  private suspend fun streamAndPlay(
-    voiceId: String,
-    apiKey: String,
-    request: ElevenLabsRequest,
-    playbackToken: Long,
-  ) {
-    ensurePlaybackActive(playbackToken)
+  private suspend fun streamAndPlay(voiceId: String, apiKey: String, request: ElevenLabsRequest) {
     stopSpeaking(resetInterrupt = false)
-    ensurePlaybackActive(playbackToken)
 
     pcmStopRequested = false
     val pcmSampleRate = TalkModeRuntime.parsePcmSampleRate(request.outputFormat)
     if (pcmSampleRate != null) {
       try {
-        streamAndPlayPcm(
-          voiceId = voiceId,
-          apiKey = apiKey,
-          request = request,
-          sampleRate = pcmSampleRate,
-          playbackToken = playbackToken,
-        )
+        streamAndPlayPcm(voiceId = voiceId, apiKey = apiKey, request = request, sampleRate = pcmSampleRate)
         return
       } catch (err: Throwable) {
-        if (isPlaybackCancelled(err, playbackToken) || pcmStopRequested) return
+        if (pcmStopRequested) return
         Log.w(tag, "pcm playback failed; falling back to mp3: ${err.message ?: err::class.simpleName}")
       }
     }
 
-    // When falling back from PCM, rewrite format to MP3 and download to file.
-    // File-based playback avoids custom DataSource races and is reliable across OEMs.
-    val mp3Request = if (request.outputFormat?.startsWith("pcm_") == true) {
-      request.copy(outputFormat = "mp3_44100_128")
-    } else {
-      request
-    }
-    streamAndPlayMp3(voiceId = voiceId, apiKey = apiKey, request = mp3Request, playbackToken = playbackToken)
+    streamAndPlayMp3(voiceId = voiceId, apiKey = apiKey, request = request)
   }
 
-  private suspend fun streamAndPlayMp3(
-    voiceId: String,
-    apiKey: String,
-    request: ElevenLabsRequest,
-    playbackToken: Long,
-  ) {
+  private suspend fun streamAndPlayMp3(voiceId: String, apiKey: String, request: ElevenLabsRequest) {
     val dataSource = StreamingMediaDataSource()
     streamingSource = dataSource
 
@@ -1007,7 +572,7 @@ private const val defaultTalkProvider = "elevenlabs"
     player.setAudioAttributes(
       AudioAttributes.Builder()
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setUsage(AudioAttributes.USAGE_ASSISTANT)
         .build(),
     )
     player.setOnPreparedListener {
@@ -1031,7 +596,7 @@ private const val defaultTalkProvider = "elevenlabs"
     val fetchJob =
       scope.launch(Dispatchers.IO) {
         try {
-          streamTts(voiceId = voiceId, apiKey = apiKey, request = request, sink = dataSource, playbackToken = playbackToken)
+          streamTts(voiceId = voiceId, apiKey = apiKey, request = request, sink = dataSource)
           fetchError.complete(null)
         } catch (err: Throwable) {
           dataSource.fail()
@@ -1041,11 +606,8 @@ private const val defaultTalkProvider = "elevenlabs"
 
     Log.d(tag, "play start")
     try {
-      ensurePlaybackActive(playbackToken)
       prepared.await()
-      ensurePlaybackActive(playbackToken)
       finished.await()
-      ensurePlaybackActive(playbackToken)
       fetchError.await()?.let { throw it }
     } finally {
       fetchJob.cancel()
@@ -1054,82 +616,12 @@ private const val defaultTalkProvider = "elevenlabs"
     Log.d(tag, "play done")
   }
 
-  /**
-   * Download ElevenLabs audio to a temp file, then play from disk via MediaPlayer.
-   * Simpler and more reliable than streaming: avoids custom DataSource races and
-   * AudioTrack underrun issues on OxygenOS/OnePlus.
-   */
-  private suspend fun streamAndPlayViaFile(voiceId: String, apiKey: String, request: ElevenLabsRequest) {
-    val tempFile = withContext(Dispatchers.IO) {
-      val file = File.createTempFile("tts_", ".mp3", context.cacheDir)
-      val conn = openTtsConnection(voiceId = voiceId, apiKey = apiKey, request = request)
-      try {
-        val payload = buildRequestPayload(request)
-        conn.outputStream.use { it.write(payload.toByteArray()) }
-        val code = conn.responseCode
-        if (code >= 400) {
-          val body = conn.errorStream?.readBytes()?.toString(Charsets.UTF_8) ?: ""
-          file.delete()
-          throw IllegalStateException("ElevenLabs failed: $code $body")
-        }
-        Log.d(tag, "elevenlabs http code=$code voiceId=$voiceId format=${request.outputFormat}")
-        // Manual loop so cancellation is honoured on every chunk.
-        // input.copyTo() is a single blocking call with no yield points; if the
-        // coroutine is cancelled mid-download the entire response would finish
-        // before cancellation was observed.
-        conn.inputStream.use { input ->
-          file.outputStream().use { out ->
-            val buf = ByteArray(8192)
-            var n: Int
-            while (input.read(buf).also { n = it } != -1) {
-              ensureActive()
-              out.write(buf, 0, n)
-            }
-          }
-        }
-      } catch (err: Throwable) {
-        file.delete()
-        throw err
-      } finally {
-        conn.disconnect()
-      }
-      file
-    }
-    try {
-      val player = MediaPlayer()
-      this.player = player
-      val finished = CompletableDeferred<Unit>()
-      player.setAudioAttributes(
-        AudioAttributes.Builder()
-          .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-          .setUsage(AudioAttributes.USAGE_MEDIA)
-          .build(),
-      )
-      player.setOnCompletionListener { finished.complete(Unit) }
-      player.setOnErrorListener { _, what, extra ->
-        finished.completeExceptionally(IllegalStateException("MediaPlayer error what=$what extra=$extra"))
-        true
-      }
-      player.setDataSource(tempFile.absolutePath)
-      withContext(Dispatchers.IO) { player.prepare() }
-      Log.d(tag, "file play start bytes=${tempFile.length()}")
-      player.start()
-      finished.await()
-      Log.d(tag, "file play done")
-    } finally {
-      try { cleanupPlayer() } catch (_: Throwable) {}
-      tempFile.delete()
-    }
-  }
-
   private suspend fun streamAndPlayPcm(
     voiceId: String,
     apiKey: String,
     request: ElevenLabsRequest,
     sampleRate: Int,
-    playbackToken: Long,
   ) {
-    ensurePlaybackActive(playbackToken)
     val minBuffer =
       AudioTrack.getMinBufferSize(
         sampleRate,
@@ -1145,7 +637,7 @@ private const val defaultTalkProvider = "elevenlabs"
       AudioTrack(
         AudioAttributes.Builder()
           .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setUsage(AudioAttributes.USAGE_ASSISTANT)
           .build(),
         AudioFormat.Builder()
           .setSampleRate(sampleRate)
@@ -1161,29 +653,24 @@ private const val defaultTalkProvider = "elevenlabs"
       throw IllegalStateException("AudioTrack init failed")
     }
     pcmTrack = track
-    // Don't call track.play() yet — start the track only when the first audio
-    // chunk arrives from ElevenLabs (see streamPcm). OxygenOS/OnePlus kills an
-    // AudioTrack that underruns (no data written) for ~1+ seconds, causing
-    // write() to return 0. Deferring play() until first data avoids the underrun.
+    track.play()
 
     Log.d(tag, "pcm play start sampleRate=$sampleRate bufferSize=$bufferSize")
     try {
-      streamPcm(voiceId = voiceId, apiKey = apiKey, request = request, track = track, playbackToken = playbackToken)
+      streamPcm(voiceId = voiceId, apiKey = apiKey, request = request, track = track)
     } finally {
       cleanupPcmTrack()
     }
     Log.d(tag, "pcm play done")
   }
 
-  private suspend fun speakWithSystemTts(text: String, playbackToken: Long) {
+  private suspend fun speakWithSystemTts(text: String) {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return
-    ensurePlaybackActive(playbackToken)
     val ok = ensureSystemTts()
     if (!ok) {
       throw IllegalStateException("system TTS unavailable")
     }
-    ensurePlaybackActive(playbackToken)
 
     val tts = systemTts ?: throw IllegalStateException("system TTS unavailable")
     val utteranceId = "talk-${UUID.randomUUID()}"
@@ -1193,7 +680,6 @@ private const val defaultTalkProvider = "elevenlabs"
     systemTtsPendingId = utteranceId
 
     withContext(Dispatchers.Main) {
-      ensurePlaybackActive(playbackToken)
       val params = Bundle()
       tts.speak(trimmed, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }
@@ -1204,7 +690,6 @@ private const val defaultTalkProvider = "elevenlabs"
       } catch (err: Throwable) {
         throw err
       }
-      ensurePlaybackActive(playbackToken)
     }
   }
 
@@ -1270,14 +755,6 @@ private const val defaultTalkProvider = "elevenlabs"
     }
   }
 
-  /** Stop any active TTS immediately — call when user taps mic to barge in. */
-  fun stopTts() {
-    stopActiveStreamingTts()
-    stopSpeaking(resetInterrupt = true)
-    _isSpeaking.value = false
-    _statusText.value = "Listening"
-  }
-
   private fun stopSpeaking(resetInterrupt: Boolean = true) {
     pcmStopRequested = true
     if (!_isSpeaking.value) {
@@ -1287,7 +764,6 @@ private const val defaultTalkProvider = "elevenlabs"
       systemTtsPending?.cancel()
       systemTtsPending = null
       systemTtsPendingId = null
-      abandonAudioFocus()
       return
     }
     if (resetInterrupt) {
@@ -1301,42 +777,6 @@ private const val defaultTalkProvider = "elevenlabs"
     systemTtsPending = null
     systemTtsPendingId = null
     _isSpeaking.value = false
-    abandonAudioFocus()
-  }
-
-  private fun shouldAllowSpeechInterrupt(): Boolean {
-    return !finalizeInFlight
-  }
-
-  private fun clearListenWatchdog() {
-    listenWatchdogJob?.cancel()
-    listenWatchdogJob = null
-  }
-
-  private fun requestAudioFocusForTts(): Boolean {
-    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return true
-    val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-      .setAudioAttributes(
-        AudioAttributes.Builder()
-          .setUsage(AudioAttributes.USAGE_MEDIA)
-          .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-          .build()
-      )
-      .setOnAudioFocusChangeListener(audioFocusListener)
-      .build()
-    audioFocusRequest = req
-    val result = am.requestAudioFocus(req)
-    Log.d(tag, "audio focus request result=$result")
-    return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED || result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED
-  }
-
-  private fun abandonAudioFocus() {
-    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-    audioFocusRequest?.let {
-      am.abandonAudioFocusRequest(it)
-      Log.d(tag, "audio focus abandoned")
-    }
-    audioFocusRequest = null
   }
 
   private fun cleanupPlayer() {
@@ -1369,23 +809,6 @@ private const val defaultTalkProvider = "elevenlabs"
     return true
   }
 
-  private fun ensurePlaybackActive(playbackToken: Long) {
-    if (!playbackEnabled || playbackToken != playbackGeneration.get()) {
-      throw CancellationException("assistant speech cancelled")
-    }
-  }
-
-  private fun isPlaybackCancelled(err: Throwable?, playbackToken: Long): Boolean {
-    if (err is CancellationException) return true
-    return !playbackEnabled || playbackToken != playbackGeneration.get()
-  }
-
-  private suspend fun ensureConfigLoaded() {
-    if (!configLoaded) {
-      reloadConfig()
-    }
-  }
-
   private suspend fun reloadConfig() {
     val envVoice = System.getenv("ELEVENLABS_VOICE_ID")?.trim()
     val sagVoice = System.getenv("SAG_VOICE_ID")?.trim()
@@ -1395,51 +818,30 @@ private const val defaultTalkProvider = "elevenlabs"
       val root = json.parseToJsonElement(res).asObjectOrNull()
       val config = root?.get("config").asObjectOrNull()
       val talk = config?.get("talk").asObjectOrNull()
-      val selection = selectTalkProviderConfig(talk)
-      val activeProvider = selection?.provider ?: defaultTalkProvider
-      val activeConfig = selection?.config
       val sessionCfg = config?.get("session").asObjectOrNull()
       val mainKey = normalizeMainKey(sessionCfg?.get("mainKey").asStringOrNull())
-      val voice = activeConfig?.get("voiceId")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+      val voice = talk?.get("voiceId")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
       val aliases =
-        activeConfig?.get("voiceAliases").asObjectOrNull()?.entries?.mapNotNull { (key, value) ->
+        talk?.get("voiceAliases").asObjectOrNull()?.entries?.mapNotNull { (key, value) ->
           val id = value.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
           normalizeAliasKey(key).takeIf { it.isNotEmpty() }?.let { it to id }
         }?.toMap().orEmpty()
-      val model = activeConfig?.get("modelId")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-      val outputFormat =
-        activeConfig?.get("outputFormat")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-      val key = activeConfig?.get("apiKey")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+      val model = talk?.get("modelId")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+      val outputFormat = talk?.get("outputFormat")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+      val key = talk?.get("apiKey")?.asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
       val interrupt = talk?.get("interruptOnSpeech")?.asBooleanOrNull()
 
       if (!isCanonicalMainSessionKey(mainSessionKey)) {
         mainSessionKey = mainKey
       }
-      defaultVoiceId =
-        if (activeProvider == defaultTalkProvider) {
-          voice ?: envVoice?.takeIf { it.isNotEmpty() } ?: sagVoice?.takeIf { it.isNotEmpty() }
-        } else {
-          voice
-        }
+      defaultVoiceId = voice ?: envVoice?.takeIf { it.isNotEmpty() } ?: sagVoice?.takeIf { it.isNotEmpty() }
       voiceAliases = aliases
       if (!voiceOverrideActive) currentVoiceId = defaultVoiceId
       defaultModelId = model ?: defaultModelIdFallback
       if (!modelOverrideActive) currentModelId = defaultModelId
       defaultOutputFormat = outputFormat ?: defaultOutputFormatFallback
       apiKey = key ?: envKey?.takeIf { it.isNotEmpty() }
-      Log.d(tag, "reloadConfig apiKey=${if (apiKey != null) "set" else "null"} voiceId=$defaultVoiceId")
       if (interrupt != null) interruptOnSpeech = interrupt
-      activeProviderIsElevenLabs = activeProvider == defaultTalkProvider
-      if (!activeProviderIsElevenLabs) {
-        // Clear ElevenLabs credentials so playAssistant won't attempt ElevenLabs calls
-        apiKey = null
-        defaultVoiceId = null
-        if (!voiceOverrideActive) currentVoiceId = null
-        Log.w(tag, "talk provider $activeProvider unsupported; using system voice fallback")
-      } else if (selection?.normalizedPayload == true) {
-        Log.d(tag, "talk config provider=elevenlabs")
-      }
-      configLoaded = true
     } catch (_: Throwable) {
       defaultVoiceId = envVoice?.takeIf { it.isNotEmpty() } ?: sagVoice?.takeIf { it.isNotEmpty() }
       defaultModelId = defaultModelIdFallback
@@ -1447,8 +849,6 @@ private const val defaultTalkProvider = "elevenlabs"
       apiKey = envKey?.takeIf { it.isNotEmpty() }
       voiceAliases = emptyMap()
       defaultOutputFormat = defaultOutputFormatFallback
-      // Keep config load retryable after transient fetch failures.
-      configLoaded = false
     }
   }
 
@@ -1462,20 +862,16 @@ private const val defaultTalkProvider = "elevenlabs"
     apiKey: String,
     request: ElevenLabsRequest,
     sink: StreamingMediaDataSource,
-    playbackToken: Long,
   ) {
     withContext(Dispatchers.IO) {
-      ensurePlaybackActive(playbackToken)
       val conn = openTtsConnection(voiceId = voiceId, apiKey = apiKey, request = request)
       try {
         val payload = buildRequestPayload(request)
         conn.outputStream.use { it.write(payload.toByteArray()) }
 
         val code = conn.responseCode
-        Log.d(tag, "elevenlabs http code=$code voiceId=$voiceId format=${request.outputFormat} keyLen=${apiKey.length}")
         if (code >= 400) {
           val message = conn.errorStream?.readBytes()?.toString(Charsets.UTF_8) ?: ""
-          Log.w(tag, "elevenlabs error code=$code voiceId=$voiceId body=$message")
           sink.fail()
           throw IllegalStateException("ElevenLabs failed: $code $message")
         }
@@ -1483,10 +879,8 @@ private const val defaultTalkProvider = "elevenlabs"
         val buffer = ByteArray(8 * 1024)
         conn.inputStream.use { input ->
           while (true) {
-            ensurePlaybackActive(playbackToken)
             val read = input.read(buffer)
             if (read <= 0) break
-            ensurePlaybackActive(playbackToken)
             sink.append(buffer.copyOf(read))
           }
         }
@@ -1502,10 +896,8 @@ private const val defaultTalkProvider = "elevenlabs"
     apiKey: String,
     request: ElevenLabsRequest,
     track: AudioTrack,
-    playbackToken: Long,
   ) {
     withContext(Dispatchers.IO) {
-      ensurePlaybackActive(playbackToken)
       val conn = openTtsConnection(voiceId = voiceId, apiKey = apiKey, request = request)
       try {
         val payload = buildRequestPayload(request)
@@ -1517,33 +909,24 @@ private const val defaultTalkProvider = "elevenlabs"
           throw IllegalStateException("ElevenLabs failed: $code $message")
         }
 
-        var totalBytesWritten = 0L
-        var trackStarted = false
         val buffer = ByteArray(8 * 1024)
         conn.inputStream.use { input ->
           while (true) {
-            if (pcmStopRequested || isPlaybackCancelled(null, playbackToken)) return@withContext
+            if (pcmStopRequested) return@withContext
             val read = input.read(buffer)
             if (read <= 0) break
-            // Start the AudioTrack only when the first chunk is ready — avoids
-            // the ~1.4s underrun window while ElevenLabs prepares audio.
-            // OxygenOS kills a track that underruns for >1s (write() returns 0).
-            if (!trackStarted) {
-              track.play()
-              trackStarted = true
-            }
             var offset = 0
             while (offset < read) {
-              if (pcmStopRequested || isPlaybackCancelled(null, playbackToken)) return@withContext
+              if (pcmStopRequested) return@withContext
               val wrote =
                 try {
                   track.write(buffer, offset, read - offset)
                 } catch (err: Throwable) {
-                  if (pcmStopRequested || isPlaybackCancelled(err, playbackToken)) return@withContext
+                  if (pcmStopRequested) return@withContext
                   throw err
                 }
               if (wrote <= 0) {
-                if (pcmStopRequested || isPlaybackCancelled(null, playbackToken)) return@withContext
+                if (pcmStopRequested) return@withContext
                 throw IllegalStateException("AudioTrack write failed: $wrote")
               }
               offset += wrote
@@ -1552,20 +935,6 @@ private const val defaultTalkProvider = "elevenlabs"
         }
       } finally {
         conn.disconnect()
-      }
-    }
-  }
-
-  private suspend fun waitForPcmDrain(track: AudioTrack, totalFrames: Long, sampleRate: Int) {
-    if (totalFrames <= 0) return
-    withContext(Dispatchers.IO) {
-      val drainDeadline = SystemClock.elapsedRealtime() + 15_000
-      while (!pcmStopRequested && SystemClock.elapsedRealtime() < drainDeadline) {
-        val played = track.playbackHeadPosition.toLong().and(0xFFFFFFFFL)
-        if (played >= totalFrames) break
-        val remainingFrames = totalFrames - played
-        val sleepMs = ((remainingFrames * 1000L) / sampleRate.toLong()).coerceIn(12L, 120L)
-        delay(sleepMs)
       }
     }
   }
@@ -1720,13 +1089,9 @@ private const val defaultTalkProvider = "elevenlabs"
   }
 
   private fun ensureInterruptListener() {
-    if (!interruptOnSpeech || !_isEnabled.value || !shouldAllowSpeechInterrupt()) return
-    // Don't create a new recognizer when we just destroyed one for TTS (finalizeInFlight=true).
-    // Starting a new recognizer mid-TTS causes audio session conflict that kills AudioTrack
-    // writes (returns 0) and MediaPlayer on OxygenOS/OnePlus devices.
-    if (finalizeInFlight) return
+    if (!interruptOnSpeech || !_isEnabled.value) return
     mainHandler.post {
-      if (stopRequested || finalizeInFlight) return@post
+      if (stopRequested) return@post
       if (!SpeechRecognizer.isRecognitionAvailable(context)) return@post
       try {
         if (recognizer == null) {
@@ -1753,9 +1118,8 @@ private const val defaultTalkProvider = "elevenlabs"
     val trimmed = preferred?.trim().orEmpty()
     if (trimmed.isNotEmpty()) {
       val resolved = resolveVoiceAlias(trimmed)
-      // If it resolves as an alias, use the alias target.
-      // Otherwise treat it as a direct voice ID (e.g. "21m00Tcm4TlvDq8ikWAM").
-      return resolved ?: trimmed
+      if (resolved != null) return resolved
+      Log.w(tag, "unknown voice alias $trimmed")
     }
     fallbackVoiceId?.let { return it }
 
@@ -1831,12 +1195,7 @@ private const val defaultTalkProvider = "elevenlabs"
       override fun onBufferReceived(buffer: ByteArray?) {}
 
       override fun onEndOfSpeech() {
-        clearListenWatchdog()
-        // Don't restart while a transcript is being processed — the recognizer
-        // competing for audio resources kills AudioTrack PCM playback.
-        if (!finalizeInFlight) {
-          scheduleRestart()
-        }
+        scheduleRestart()
       }
 
       override fun onError(error: Int) {

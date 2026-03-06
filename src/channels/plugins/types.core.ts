@@ -120,21 +120,12 @@ export type ChannelAccountSnapshot = {
   lastStopAt?: number | null;
   lastInboundAt?: number | null;
   lastOutboundAt?: number | null;
-  busy?: boolean;
-  activeRuns?: number;
-  lastRunActivityAt?: number | null;
   mode?: string;
   dmPolicy?: string;
   allowFrom?: string[];
   tokenSource?: string;
   botTokenSource?: string;
   appTokenSource?: string;
-  signingSecretSource?: string;
-  tokenStatus?: string;
-  botTokenStatus?: string;
-  appTokenStatus?: string;
-  signingSecretStatus?: string;
-  userTokenStatus?: string;
   credentialSource?: string;
   secretSource?: string;
   audienceType?: string;
@@ -258,20 +249,16 @@ export type ChannelThreadingContext = {
   From?: string;
   To?: string;
   ChatType?: string;
-  CurrentMessageId?: string | number;
   ReplyToId?: string;
   ReplyToIdFull?: string;
   ThreadLabel?: string;
   MessageThreadId?: string | number;
-  /** Platform-native channel/conversation id (e.g. Slack DM channel "D…" id). */
-  NativeChannelId?: string;
 };
 
 export type ChannelThreadingToolContext = {
   currentChannelId?: string;
   currentChannelProvider?: ChannelId;
   currentThreadTs?: string;
-  currentMessageId?: string | number;
   replyToMode?: "off" | "first" | "all";
   hasRepliedRef?: { value: boolean };
   /**
@@ -340,16 +327,9 @@ export type ChannelMessageActionContext = {
 export type ChannelToolSend = {
   to: string;
   accountId?: string | null;
-  threadId?: string | null;
 };
 
 export type ChannelMessageActionAdapter = {
-  /**
-   * Advertise agent-discoverable actions for this channel.
-   * Keep this aligned with any gated capability checks. Poll discovery is
-   * not inferred from `outbound.sendPoll`, so channels that want agents to
-   * create polls should include `"poll"` here when enabled.
-   */
   listActions?: (params: { cfg: OpenClawConfig }) => ChannelMessageActionName[];
   supportsAction?: (params: { action: ChannelMessageActionName }) => boolean;
   supportsButtons?: (params: { cfg: OpenClawConfig }) => boolean;

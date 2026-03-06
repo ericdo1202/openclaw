@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OpenClawPluginApi, OpenClawPluginService } from "openclaw/plugin-sdk/phone-control";
+import type { OpenClawPluginApi, OpenClawPluginService } from "openclaw/plugin-sdk";
 
 type ArmGroup = "camera" | "screen" | "writes" | "all";
 
@@ -29,7 +29,7 @@ const STATE_REL_PATH = ["plugins", "phone-control", "armed.json"] as const;
 const GROUP_COMMANDS: Record<Exclude<ArmGroup, "all">, string[]> = {
   camera: ["camera.snap", "camera.clip"],
   screen: ["screen.record"],
-  writes: ["calendar.add", "contacts.add", "reminders.add", "sms.send"],
+  writes: ["calendar.add", "contacts.add", "reminders.add"],
 };
 
 function uniqSorted(values: string[]): string[] {

@@ -2,7 +2,6 @@ import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig, MemorySearchConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
-import type { SecretInput } from "../config/types.secrets.js";
 import { clampInt, clampNumber, resolveUserPath } from "../utils.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 
@@ -10,10 +9,10 @@ export type ResolvedMemorySearchConfig = {
   enabled: boolean;
   sources: Array<"memory" | "sessions">;
   extraPaths: string[];
-  provider: "openai" | "local" | "gemini" | "voyage" | "mistral" | "ollama" | "auto";
+  provider: "openai" | "local" | "gemini" | "voyage" | "mistral" | "auto";
   remote?: {
     baseUrl?: string;
-    apiKey?: SecretInput;
+    apiKey?: string;
     headers?: Record<string, string>;
     batch?: {
       enabled: boolean;
@@ -26,7 +25,7 @@ export type ResolvedMemorySearchConfig = {
   experimental: {
     sessionMemory: boolean;
   };
-  fallback: "openai" | "gemini" | "local" | "voyage" | "mistral" | "ollama" | "none";
+  fallback: "openai" | "gemini" | "local" | "voyage" | "mistral" | "none";
   model: string;
   local: {
     modelPath?: string;
@@ -83,7 +82,6 @@ const DEFAULT_OPENAI_MODEL = "text-embedding-3-small";
 const DEFAULT_GEMINI_MODEL = "gemini-embedding-001";
 const DEFAULT_VOYAGE_MODEL = "voyage-4-large";
 const DEFAULT_MISTRAL_MODEL = "mistral-embed";
-const DEFAULT_OLLAMA_MODEL = "nomic-embed-text";
 const DEFAULT_CHUNK_TOKENS = 400;
 const DEFAULT_CHUNK_OVERLAP = 80;
 const DEFAULT_WATCH_DEBOUNCE_MS = 1500;
@@ -157,7 +155,6 @@ function mergeConfig(
     provider === "gemini" ||
     provider === "voyage" ||
     provider === "mistral" ||
-    provider === "ollama" ||
     provider === "auto";
   const batch = {
     enabled: overrideRemote?.batch?.enabled ?? defaultRemote?.batch?.enabled ?? false,
@@ -189,9 +186,7 @@ function mergeConfig(
           ? DEFAULT_VOYAGE_MODEL
           : provider === "mistral"
             ? DEFAULT_MISTRAL_MODEL
-            : provider === "ollama"
-              ? DEFAULT_OLLAMA_MODEL
-              : undefined;
+            : undefined;
   const model = overrides?.model ?? defaults?.model ?? modelDefault ?? "";
   const local = {
     modelPath: overrides?.local?.modelPath ?? defaults?.local?.modelPath,

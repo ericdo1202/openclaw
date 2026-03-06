@@ -1,49 +1,48 @@
+// zca-cli wrapper types
+export type ZcaRunOptions = {
+  profile?: string;
+  cwd?: string;
+  timeout?: number;
+};
+
+export type ZcaResult = {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+};
+
+export type ZcaProfile = {
+  name: string;
+  label?: string;
+  isDefault?: boolean;
+};
+
 export type ZcaFriend = {
   userId: string;
   displayName: string;
   avatar?: string;
 };
 
-export type ZaloGroup = {
+export type ZcaGroup = {
   groupId: string;
   name: string;
   memberCount?: number;
 };
 
-export type ZaloGroupMember = {
-  userId: string;
-  displayName: string;
-  avatar?: string;
-};
-
-export type ZaloEventMessage = {
-  msgId: string;
-  cliMsgId: string;
-  uidFrom: string;
-  idTo: string;
-  msgType: string;
-  st: number;
-  at: number;
-  cmd: number;
-  ts: string | number;
-};
-
-export type ZaloInboundMessage = {
+export type ZcaMessage = {
   threadId: string;
-  isGroup: boolean;
-  senderId: string;
-  senderName?: string;
-  groupName?: string;
-  content: string;
-  timestampMs: number;
   msgId?: string;
   cliMsgId?: string;
-  hasAnyMention?: boolean;
-  wasExplicitlyMentioned?: boolean;
-  canResolveExplicitMention?: boolean;
-  implicitMention?: boolean;
-  eventMessage?: ZaloEventMessage;
-  raw: unknown;
+  type: number;
+  content: string;
+  timestamp: number;
+  metadata?: {
+    isGroup: boolean;
+    threadName?: string;
+    senderName?: string;
+    fromId?: string;
+  };
 };
 
 export type ZcaUserInfo = {
@@ -52,37 +51,28 @@ export type ZcaUserInfo = {
   avatar?: string;
 };
 
-export type ZaloSendOptions = {
+export type CommonOptions = {
   profile?: string;
-  mediaUrl?: string;
-  caption?: string;
-  isGroup?: boolean;
-  mediaLocalRoots?: readonly string[];
+  json?: boolean;
 };
 
-export type ZaloSendResult = {
-  ok: boolean;
-  messageId?: string;
-  error?: string;
+export type SendOptions = CommonOptions & {
+  group?: boolean;
 };
 
-export type ZaloGroupContext = {
-  groupId: string;
-  name?: string;
-  members?: string[];
+export type ListenOptions = CommonOptions & {
+  raw?: boolean;
+  keepAlive?: boolean;
+  webhook?: string;
+  echo?: boolean;
+  prefix?: string;
 };
 
-export type ZaloAuthStatus = {
-  connected: boolean;
-  message: string;
-};
+type ZalouserToolConfig = { allow?: string[]; deny?: string[] };
 
-export type ZalouserToolConfig = { allow?: string[]; deny?: string[] };
-
-export type ZalouserGroupConfig = {
+type ZalouserGroupConfig = {
   allow?: boolean;
   enabled?: boolean;
-  requireMention?: boolean;
   tools?: ZalouserToolConfig;
 };
 

@@ -1,7 +1,5 @@
 import type { LocationMessageEventContent, MatrixClient } from "@vector-im/matrix-bot-sdk";
 import {
-  DEFAULT_ACCOUNT_ID,
-  createScopedPairingAccess,
   createReplyPrefixOptions,
   createTypingCallbacks,
   formatAllowlistMatchMeta,
@@ -11,7 +9,7 @@ import {
   type PluginRuntime,
   type RuntimeEnv,
   type RuntimeLogger,
-} from "openclaw/plugin-sdk/matrix";
+} from "openclaw/plugin-sdk";
 import type { CoreConfig, MatrixRoomConfig, ReplyToMode } from "../../types.js";
 import { fetchEventSummary } from "../actions/summary.js";
 import {
@@ -20,18 +18,17 @@ import {
   parsePollStartContent,
   type PollStartContent,
 } from "../poll-types.js";
-import { reactMatrixMessage, sendMessageMatrix, sendTypingMatrix } from "../send.js";
-import { enforceMatrixDirectMessageAccess, resolveMatrixAccessState } from "./access-policy.js";
+import {
+  reactMatrixMessage,
+  sendMessageMatrix,
+  sendReadReceiptMatrix,
+  sendTypingMatrix,
+} from "../send.js";
 import {
   normalizeMatrixAllowList,
   resolveMatrixAllowListMatch,
   resolveMatrixAllowListMatches,
 } from "./allowlist.js";
-import {
-  resolveMatrixBodyForAgent,
-  resolveMatrixInboundSenderLabel,
-  resolveMatrixSenderUsername,
-} from "./inbound-body.js";
 import { resolveMatrixLocation, type MatrixLocationPayload } from "./location.js";
 import { downloadMatrixMedia } from "./media.js";
 import { resolveMentions } from "./mentions.js";
@@ -99,12 +96,6 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     getMemberDisplayName,
     accountId,
   } = params;
-  const resolvedAccountId = accountId?.trim() || DEFAULT_ACCOUNT_ID;
-  const pairing = createScopedPairingAccess({
-    core,
-    channel: "matrix",
-    accountId: resolvedAccountId,
-  });
 
   return async (roomId: string, event: MatrixRawEvent) => {
     try {
@@ -227,41 +218,61 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       }
 
       const senderName = await getMemberDisplayName(roomId, senderId);
-      const senderUsername = resolveMatrixSenderUsername(senderId);
-      const senderLabel = resolveMatrixInboundSenderLabel({
-        senderName,
-        senderId,
-        senderUsername,
-      });
+      const storeAllowFrom =
+        dmPolicy === "allowlist"
+          ? []
+          : await core.channel.pairing.readAllowFromStore("matrix").catch(() => []);
+      const effectiveAllowFrom = normalizeMatrixAllowList([...allowFrom, ...storeAllowFrom]);
       const groupAllowFrom = cfg.channels?.matrix?.groupAllowFrom ?? [];
-      const { access, effectiveAllowFrom, effectiveGroupAllowFrom, groupAllowConfigured } =
-        await resolveMatrixAccessState({
-          isDirectMessage,
-          resolvedAccountId,
-          dmPolicy,
-          groupPolicy,
-          allowFrom,
-          groupAllowFrom,
-          senderId,
-          readStoreForDmPolicy: pairing.readStoreForDmPolicy,
-        });
+      const effectiveGroupAllowFrom = normalizeMatrixAllowList(groupAllowFrom);
+      const groupAllowConfigured = effectiveGroupAllowFrom.length > 0;
 
       if (isDirectMessage) {
-        const allowedDirectMessage = await enforceMatrixDirectMessageAccess({
-          dmEnabled,
-          dmPolicy,
-          accessDecision: access.decision,
-          senderId,
-          senderName,
-          effectiveAllowFrom,
-          upsertPairingRequest: pairing.upsertPairingRequest,
-          sendPairingReply: async (text) => {
-            await sendMessageMatrix(`room:${roomId}`, text, { client });
-          },
-          logVerboseMessage,
-        });
-        if (!allowedDirectMessage) {
+        if (!dmEnabled || dmPolicy === "disabled") {
           return;
+        }
+        if (dmPolicy !== "open") {
+          const allowMatch = resolveMatrixAllowListMatch({
+            allowList: effectiveAllowFrom,
+            userId: senderId,
+          });
+          const allowMatchMeta = formatAllowlistMatchMeta(allowMatch);
+          if (!allowMatch.allowed) {
+            if (dmPolicy === "pairing") {
+              const { code, created } = await core.channel.pairing.upsertPairingRequest({
+                channel: "matrix",
+                id: senderId,
+                meta: { name: senderName },
+              });
+              if (created) {
+                logVerboseMessage(
+                  `matrix pairing request sender=${senderId} name=${senderName ?? "unknown"} (${allowMatchMeta})`,
+                );
+                try {
+                  await sendMessageMatrix(
+                    `room:${roomId}`,
+                    [
+                      "OpenClaw: access not configured.",
+                      "",
+                      `Pairing code: ${code}`,
+                      "",
+                      "Ask the bot owner to approve with:",
+                      "openclaw pairing approve matrix <code>",
+                    ].join("\n"),
+                    { client },
+                  );
+                } catch (err) {
+                  logVerboseMessage(`matrix pairing reply failed for ${senderId}: ${String(err)}`);
+                }
+              }
+            }
+            if (dmPolicy !== "pairing") {
+              logVerboseMessage(
+                `matrix: blocked dm sender ${senderId} (dmPolicy=${dmPolicy}, ${allowMatchMeta})`,
+              );
+            }
+            return;
+          }
         }
       }
 
@@ -280,7 +291,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           return;
         }
       }
-      if (isRoom && roomUsers.length === 0 && groupAllowConfigured && access.decision !== "allow") {
+      if (isRoom && groupPolicy === "allowlist" && roomUsers.length === 0 && groupAllowConfigured) {
         const groupAllowMatch = resolveMatrixAllowListMatch({
           allowList: effectiveGroupAllowFrom,
           userId: senderId,
@@ -492,25 +503,19 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         storePath,
         sessionKey: route.sessionKey,
       });
-      const body = core.channel.reply.formatInboundEnvelope({
+      const body = core.channel.reply.formatAgentEnvelope({
         channel: "Matrix",
         from: envelopeFrom,
         timestamp: eventTs ?? undefined,
         previousTimestamp,
         envelope: envelopeOptions,
         body: textWithId,
-        chatType: isDirectMessage ? "direct" : "channel",
-        senderLabel,
       });
 
       const groupSystemPrompt = roomConfig?.systemPrompt?.trim() || undefined;
       const ctxPayload = core.channel.reply.finalizeInboundContext({
         Body: body,
-        BodyForAgent: resolveMatrixBodyForAgent({
-          isDirectMessage,
-          bodyText,
-          senderLabel,
-        }),
+        BodyForAgent: bodyText,
         RawBody: bodyText,
         CommandBody: bodyText,
         From: isDirectMessage ? `matrix:${senderId}` : `matrix:channel:${roomId}`,
@@ -521,7 +526,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         ConversationLabel: envelopeFrom,
         SenderName: senderName,
         SenderId: senderId,
-        SenderUsername: senderUsername,
+        SenderUsername: senderId.split(":")[0]?.replace(/^@/, ""),
         GroupSubject: isRoom ? (roomName ?? roomId) : undefined,
         GroupChannel: isRoom ? (roomInfo.canonicalAlias ?? roomId) : undefined,
         GroupSystemPrompt: isRoom ? groupSystemPrompt : undefined,
@@ -597,6 +602,14 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         return;
       }
 
+      if (messageId) {
+        sendReadReceiptMatrix(roomId, messageId, client).catch((err) => {
+          logVerboseMessage(
+            `matrix: read receipt failed room=${roomId} id=${messageId}: ${String(err)}`,
+          );
+        });
+      }
+
       let didSendReply = false;
       const tableMode = core.channel.text.resolveMarkdownTableMode({
         cfg,
@@ -635,7 +648,6 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         core.channel.reply.createReplyDispatcherWithTyping({
           ...prefixOptions,
           humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId),
-          typingCallbacks,
           deliver: async (payload) => {
             await deliverMatrixReplies({
               replies: [payload],
@@ -653,25 +665,21 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           onError: (err, info) => {
             runtime.error?.(`matrix ${info.kind} reply failed: ${String(err)}`);
           },
+          onReplyStart: typingCallbacks.onReplyStart,
+          onIdle: typingCallbacks.onIdle,
         });
 
-      const { queuedFinal, counts } = await core.channel.reply.withReplyDispatcher({
+      const { queuedFinal, counts } = await core.channel.reply.dispatchReplyFromConfig({
+        ctx: ctxPayload,
+        cfg,
         dispatcher,
-        onSettled: () => {
-          markDispatchIdle();
+        replyOptions: {
+          ...replyOptions,
+          skillFilter: roomConfig?.skills,
+          onModelSelected,
         },
-        run: () =>
-          core.channel.reply.dispatchReplyFromConfig({
-            ctx: ctxPayload,
-            cfg,
-            dispatcher,
-            replyOptions: {
-              ...replyOptions,
-              skillFilter: roomConfig?.skills,
-              onModelSelected,
-            },
-          }),
       });
+      markDispatchIdle();
       if (!queuedFinal) {
         return;
       }

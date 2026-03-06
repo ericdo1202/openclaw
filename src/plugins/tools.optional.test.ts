@@ -52,66 +52,64 @@ function setRegistry(entries: MockRegistryToolEntry[]) {
   return registry;
 }
 
-function setMultiToolRegistry() {
-  return setRegistry([
-    {
-      pluginId: "multi",
-      optional: false,
-      source: "/tmp/multi.js",
-      factory: () => [makeTool("message"), makeTool("other_tool")],
-    },
-  ]);
-}
-
-function resolveWithConflictingCoreName(options?: { suppressNameConflicts?: boolean }) {
-  return resolvePluginTools({
-    context: createContext() as never,
-    existingToolNames: new Set(["message"]),
-    ...(options?.suppressNameConflicts ? { suppressNameConflicts: true } : {}),
-  });
-}
-
-function setOptionalDemoRegistry() {
-  setRegistry([
-    {
-      pluginId: "optional-demo",
-      optional: true,
-      source: "/tmp/optional-demo.js",
-      factory: () => makeTool("optional_tool"),
-    },
-  ]);
-}
-
-function resolveOptionalDemoTools(toolAllowlist?: string[]) {
-  return resolvePluginTools({
-    context: createContext() as never,
-    ...(toolAllowlist ? { toolAllowlist } : {}),
-  });
-}
-
 describe("resolvePluginTools optional tools", () => {
   beforeEach(() => {
     loadOpenClawPluginsMock.mockClear();
   });
 
   it("skips optional tools without explicit allowlist", () => {
-    setOptionalDemoRegistry();
-    const tools = resolveOptionalDemoTools();
+    setRegistry([
+      {
+        pluginId: "optional-demo",
+        optional: true,
+        source: "/tmp/optional-demo.js",
+        factory: () => makeTool("optional_tool"),
+      },
+    ]);
+
+    const tools = resolvePluginTools({
+      context: createContext() as never,
+    });
 
     expect(tools).toHaveLength(0);
   });
 
   it("allows optional tools by tool name", () => {
-    setOptionalDemoRegistry();
-    const tools = resolveOptionalDemoTools(["optional_tool"]);
+    setRegistry([
+      {
+        pluginId: "optional-demo",
+        optional: true,
+        source: "/tmp/optional-demo.js",
+        factory: () => makeTool("optional_tool"),
+      },
+    ]);
+
+    const tools = resolvePluginTools({
+      context: createContext() as never,
+      toolAllowlist: ["optional_tool"],
+    });
 
     expect(tools.map((tool) => tool.name)).toEqual(["optional_tool"]);
   });
 
   it("allows optional tools via plugin-scoped allowlist entries", () => {
-    setOptionalDemoRegistry();
-    const toolsByPlugin = resolveOptionalDemoTools(["optional-demo"]);
-    const toolsByGroup = resolveOptionalDemoTools(["group:plugins"]);
+    setRegistry([
+      {
+        pluginId: "optional-demo",
+        optional: true,
+        source: "/tmp/optional-demo.js",
+        factory: () => makeTool("optional_tool"),
+      },
+    ]);
+
+    const toolsByPlugin = resolvePluginTools({
+      context: createContext() as never,
+      toolAllowlist: ["optional-demo"],
+    });
+    const toolsByGroup = resolvePluginTools({
+      context: createContext() as never,
+      toolAllowlist: ["group:plugins"],
+    });
 
     expect(toolsByPlugin.map((tool) => tool.name)).toEqual(["optional_tool"]);
     expect(toolsByGroup.map((tool) => tool.name)).toEqual(["optional_tool"]);
@@ -138,8 +136,19 @@ describe("resolvePluginTools optional tools", () => {
   });
 
   it("skips conflicting tool names but keeps other tools", () => {
-    const registry = setMultiToolRegistry();
-    const tools = resolveWithConflictingCoreName();
+    const registry = setRegistry([
+      {
+        pluginId: "multi",
+        optional: false,
+        source: "/tmp/multi.js",
+        factory: () => [makeTool("message"), makeTool("other_tool")],
+      },
+    ]);
+
+    const tools = resolvePluginTools({
+      context: createContext() as never,
+      existingToolNames: new Set(["message"]),
+    });
 
     expect(tools.map((tool) => tool.name)).toEqual(["other_tool"]);
     expect(registry.diagnostics).toHaveLength(1);
@@ -147,8 +156,20 @@ describe("resolvePluginTools optional tools", () => {
   });
 
   it("suppresses conflict diagnostics when requested", () => {
-    const registry = setMultiToolRegistry();
-    const tools = resolveWithConflictingCoreName({ suppressNameConflicts: true });
+    const registry = setRegistry([
+      {
+        pluginId: "multi",
+        optional: false,
+        source: "/tmp/multi.js",
+        factory: () => [makeTool("message"), makeTool("other_tool")],
+      },
+    ]);
+
+    const tools = resolvePluginTools({
+      context: createContext() as never,
+      existingToolNames: new Set(["message"]),
+      suppressNameConflicts: true,
+    });
 
     expect(tools.map((tool) => tool.name)).toEqual(["other_tool"]);
     expect(registry.diagnostics).toHaveLength(0);

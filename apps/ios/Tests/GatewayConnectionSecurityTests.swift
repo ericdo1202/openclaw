@@ -1,36 +1,9 @@
 import Foundation
 import Network
-import OpenClawKit
 import Testing
 @testable import OpenClaw
 
 @Suite(.serialized) struct GatewayConnectionSecurityTests {
-    private func makeController() -> GatewayConnectionController {
-        GatewayConnectionController(appModel: NodeAppModel(), startDiscovery: false)
-    }
-
-    private func makeDiscoveredGateway(
-        stableID: String,
-        lanHost: String?,
-        tailnetDns: String?,
-        gatewayPort: Int?,
-        fingerprint: String?) -> GatewayDiscoveryModel.DiscoveredGateway
-    {
-        let endpoint: NWEndpoint = .service(name: "Test", type: "_openclaw-gw._tcp", domain: "local.", interface: nil)
-        return GatewayDiscoveryModel.DiscoveredGateway(
-            name: "Test",
-            endpoint: endpoint,
-            stableID: stableID,
-            debugID: "debug",
-            lanHost: lanHost,
-            tailnetDns: tailnetDns,
-            gatewayPort: gatewayPort,
-            canvasPort: nil,
-            tlsEnabled: true,
-            tlsFingerprintSha256: fingerprint,
-            cliPath: nil)
-    }
-
     private func clearTLSFingerprint(stableID: String) {
         let suite = UserDefaults(suiteName: "ai.openclaw.shared") ?? .standard
         suite.removeObject(forKey: "gateway.tls.\(stableID)")
@@ -43,13 +16,22 @@ import Testing
 
         GatewayTLSStore.saveFingerprint("11", stableID: stableID)
 
-        let gateway = makeDiscoveredGateway(
+        let endpoint: NWEndpoint = .service(name: "Test", type: "_openclaw-gw._tcp", domain: "local.", interface: nil)
+        let gateway = GatewayDiscoveryModel.DiscoveredGateway(
+            name: "Test",
+            endpoint: endpoint,
             stableID: stableID,
+            debugID: "debug",
             lanHost: "evil.example.com",
             tailnetDns: "evil.example.com",
             gatewayPort: 12345,
-            fingerprint: "22")
-        let controller = makeController()
+            canvasPort: nil,
+            tlsEnabled: true,
+            tlsFingerprintSha256: "22",
+            cliPath: nil)
+
+        let appModel = NodeAppModel()
+        let controller = GatewayConnectionController(appModel: appModel, startDiscovery: false)
 
         let params = controller._test_resolveDiscoveredTLSParams(gateway: gateway, allowTOFU: true)
         #expect(params?.expectedFingerprint == "11")
@@ -61,13 +43,22 @@ import Testing
         defer { clearTLSFingerprint(stableID: stableID) }
         clearTLSFingerprint(stableID: stableID)
 
-        let gateway = makeDiscoveredGateway(
+        let endpoint: NWEndpoint = .service(name: "Test", type: "_openclaw-gw._tcp", domain: "local.", interface: nil)
+        let gateway = GatewayDiscoveryModel.DiscoveredGateway(
+            name: "Test",
+            endpoint: endpoint,
             stableID: stableID,
+            debugID: "debug",
             lanHost: nil,
             tailnetDns: nil,
             gatewayPort: nil,
-            fingerprint: "22")
-        let controller = makeController()
+            canvasPort: nil,
+            tlsEnabled: true,
+            tlsFingerprintSha256: "22",
+            cliPath: nil)
+
+        let appModel = NodeAppModel()
+        let controller = GatewayConnectionController(appModel: appModel, startDiscovery: false)
 
         let params = controller._test_resolveDiscoveredTLSParams(gateway: gateway, allowTOFU: true)
         #expect(params?.expectedFingerprint == nil)
@@ -90,13 +81,22 @@ import Testing
         defaults.removeObject(forKey: "gateway.preferredStableID")
         defaults.set(stableID, forKey: "gateway.lastDiscoveredStableID")
 
-        let gateway = makeDiscoveredGateway(
+        let endpoint: NWEndpoint = .service(name: "Test", type: "_openclaw-gw._tcp", domain: "local.", interface: nil)
+        let gateway = GatewayDiscoveryModel.DiscoveredGateway(
+            name: "Test",
+            endpoint: endpoint,
             stableID: stableID,
+            debugID: "debug",
             lanHost: "test.local",
             tailnetDns: nil,
             gatewayPort: 18789,
-            fingerprint: nil)
-        let controller = makeController()
+            canvasPort: nil,
+            tlsEnabled: true,
+            tlsFingerprintSha256: nil,
+            cliPath: nil)
+
+        let appModel = NodeAppModel()
+        let controller = GatewayConnectionController(appModel: appModel, startDiscovery: false)
         controller._test_setGateways([gateway])
         controller._test_triggerAutoConnect()
 
@@ -104,7 +104,8 @@ import Testing
     }
 
     @Test @MainActor func manualConnectionsForceTLSForNonLoopbackHosts() async {
-        let controller = makeController()
+        let appModel = NodeAppModel()
+        let controller = GatewayConnectionController(appModel: appModel, startDiscovery: false)
 
         #expect(controller._test_resolveManualUseTLS(host: "gateway.example.com", useTLS: false) == true)
         #expect(controller._test_resolveManualUseTLS(host: "openclaw.local", useTLS: false) == true)
@@ -119,7 +120,8 @@ import Testing
     }
 
     @Test @MainActor func manualDefaultPortUses443OnlyForTailnetTLSHosts() async {
-        let controller = makeController()
+        let appModel = NodeAppModel()
+        let controller = GatewayConnectionController(appModel: appModel, startDiscovery: false)
 
         #expect(controller._test_resolveManualPort(host: "gateway.example.com", port: 0, useTLS: true) == 18789)
         #expect(controller._test_resolveManualPort(host: "device.sample.ts.net", port: 0, useTLS: true) == 443)

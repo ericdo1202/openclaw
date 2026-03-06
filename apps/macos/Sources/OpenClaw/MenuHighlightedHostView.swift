@@ -33,7 +33,17 @@ final class HighlightedMenuItemHostView: NSView {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        TrackingAreaSupport.resetMouseTracking(on: self, tracking: &self.tracking, owner: self)
+        if let tracking {
+            self.removeTrackingArea(tracking)
+        }
+        let options: NSTrackingArea.Options = [
+            .mouseEnteredAndExited,
+            .activeAlways,
+            .inVisibleRect,
+        ]
+        let area = NSTrackingArea(rect: self.bounds, options: options, owner: self, userInfo: nil)
+        self.addTrackingArea(area)
+        self.tracking = area
     }
 
     override func mouseEntered(with event: NSEvent) {

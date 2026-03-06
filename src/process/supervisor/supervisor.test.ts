@@ -5,13 +5,6 @@ type ProcessSupervisor = ReturnType<typeof createProcessSupervisor>;
 type SpawnOptions = Parameters<ProcessSupervisor["spawn"]>[0];
 type ChildSpawnOptions = Omit<Extract<SpawnOptions, { mode: "child" }>, "backendId" | "mode">;
 
-function createWriteStdoutArgv(output: string): string[] {
-  if (process.platform === "win32") {
-    return [process.execPath, "-e", `process.stdout.write(${JSON.stringify(output)})`];
-  }
-  return ["/usr/bin/printf", "%s", output];
-}
-
 async function spawnChild(supervisor: ProcessSupervisor, options: ChildSpawnOptions) {
   return supervisor.spawn({
     ...options,
@@ -25,7 +18,7 @@ describe("process supervisor", () => {
     const supervisor = createProcessSupervisor();
     const run = await spawnChild(supervisor, {
       sessionId: "s1",
-      argv: createWriteStdoutArgv("ok"),
+      argv: [process.execPath, "-e", 'process.stdout.write("ok")'],
       timeoutMs: 1_000,
       stdinMode: "pipe-closed",
     });
@@ -39,9 +32,9 @@ describe("process supervisor", () => {
     const supervisor = createProcessSupervisor();
     const run = await spawnChild(supervisor, {
       sessionId: "s1",
-      argv: [process.execPath, "-e", "setTimeout(() => {}, 14)"],
-      timeoutMs: 300,
-      noOutputTimeoutMs: 5,
+      argv: [process.execPath, "-e", "setTimeout(() => {}, 40)"],
+      timeoutMs: 500,
+      noOutputTimeoutMs: 20,
       stdinMode: "pipe-closed",
     });
     const exit = await run.wait();
@@ -55,8 +48,8 @@ describe("process supervisor", () => {
     const first = await spawnChild(supervisor, {
       sessionId: "s1",
       scopeKey: "scope:a",
-      argv: [process.execPath, "-e", "setTimeout(() => {}, 80)"],
-      timeoutMs: 1_000,
+      argv: [process.execPath, "-e", "setTimeout(() => {}, 40)"],
+      timeoutMs: 500,
       stdinMode: "pipe-open",
     });
 
@@ -64,7 +57,7 @@ describe("process supervisor", () => {
       sessionId: "s1",
       scopeKey: "scope:a",
       replaceExistingScope: true,
-      argv: createWriteStdoutArgv("new"),
+      argv: [process.execPath, "-e", 'process.stdout.write("new")'],
       timeoutMs: 1_000,
       stdinMode: "pipe-closed",
     });
@@ -80,7 +73,7 @@ describe("process supervisor", () => {
     const supervisor = createProcessSupervisor();
     const run = await spawnChild(supervisor, {
       sessionId: "s-timeout",
-      argv: [process.execPath, "-e", "setTimeout(() => {}, 12)"],
+      argv: [process.execPath, "-e", "setTimeout(() => {}, 40)"],
       timeoutMs: 1,
       stdinMode: "pipe-closed",
     });
@@ -94,7 +87,7 @@ describe("process supervisor", () => {
     let streamed = "";
     const run = await spawnChild(supervisor, {
       sessionId: "s-capture",
-      argv: createWriteStdoutArgv("streamed"),
+      argv: [process.execPath, "-e", 'process.stdout.write("streamed")'],
       timeoutMs: 1_000,
       stdinMode: "pipe-closed",
       captureOutput: false,

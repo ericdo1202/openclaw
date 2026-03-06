@@ -95,99 +95,126 @@ describe("directive behavior", () => {
     expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
   }
 
-  it("supports unambiguous fuzzy model matches across /model forms", async () => {
+  it("supports fuzzy model matches on /model directive", async () => {
     await withTempHome(async (home) => {
       const storePath = path.join(home, "sessions.json");
 
-      for (const body of ["/model kimi", "/model kimi-k2-0905-preview", "/model moonshot/kimi"]) {
-        const res = await runMoonshotModelDirective({
-          home,
-          storePath,
-          body,
-        });
-        expectMoonshotSelectionFromResponse({ response: res, storePath });
-      }
+      const res = await runMoonshotModelDirective({
+        home,
+        storePath,
+        body: "/model kimi",
+      });
+
+      expectMoonshotSelectionFromResponse({ response: res, storePath });
+    });
+  });
+  it("resolves provider-less exact model ids via fuzzy matching when unambiguous", async () => {
+    await withTempHome(async (home) => {
+      const storePath = path.join(home, "sessions.json");
+
+      const res = await runMoonshotModelDirective({
+        home,
+        storePath,
+        body: "/model kimi-k2-0905-preview",
+      });
+
+      expectMoonshotSelectionFromResponse({ response: res, storePath });
+    });
+  });
+  it("supports fuzzy matches within a provider on /model provider/model", async () => {
+    await withTempHome(async (home) => {
+      const storePath = path.join(home, "sessions.json");
+
+      const res = await runMoonshotModelDirective({
+        home,
+        storePath,
+        body: "/model moonshot/kimi",
+      });
+
+      expectMoonshotSelectionFromResponse({ response: res, storePath });
+    });
+  });
+  it("picks the best fuzzy match when multiple models match", async () => {
+    await withTempHome(async (home) => {
+      const storePath = path.join(home, "sessions.json");
+
+      await getReplyFromConfig(
+        { Body: "/model minimax", From: "+1222", To: "+1222", CommandAuthorized: true },
+        {},
+        {
+          agents: {
+            defaults: {
+              model: { primary: "minimax/MiniMax-M2.1" },
+              workspace: path.join(home, "openclaw"),
+              models: {
+                "minimax/MiniMax-M2.1": {},
+                "minimax/MiniMax-M2.1-lightning": {},
+                "lmstudio/minimax-m2.1-gs32": {},
+              },
+            },
+          },
+          models: {
+            mode: "merge",
+            providers: {
+              minimax: {
+                baseUrl: "https://api.minimax.io/anthropic",
+                apiKey: "sk-test",
+                api: "anthropic-messages",
+                models: [makeModelDefinition("MiniMax-M2.1", "MiniMax M2.1")],
+              },
+              lmstudio: {
+                baseUrl: "http://127.0.0.1:1234/v1",
+                apiKey: "lmstudio",
+                api: "openai-responses",
+                models: [makeModelDefinition("minimax-m2.1-gs32", "MiniMax M2.1 GS32")],
+              },
+            },
+          },
+          session: { store: storePath },
+        } as unknown as OpenClawConfig,
+      );
+
+      assertModelSelection(storePath);
       expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
     });
   });
-  it("picks the best fuzzy match for global and provider-scoped minimax queries", async () => {
+  it("picks the best fuzzy match within a provider", async () => {
     await withTempHome(async (home) => {
-      for (const testCase of [
+      const storePath = path.join(home, "sessions.json");
+
+      await getReplyFromConfig(
+        { Body: "/model minimax/m2.1", From: "+1222", To: "+1222", CommandAuthorized: true },
+        {},
         {
-          body: "/model minimax",
-          storePath: path.join(home, "sessions-global-fuzzy.json"),
-          config: {
-            agents: {
-              defaults: {
-                model: { primary: "minimax/MiniMax-M2.5" },
-                workspace: path.join(home, "openclaw"),
-                models: {
-                  "minimax/MiniMax-M2.5": {},
-                  "minimax/MiniMax-M2.5-Lightning": {},
-                  "lmstudio/minimax-m2.5-gs32": {},
-                },
-              },
-            },
-            models: {
-              mode: "merge",
-              providers: {
-                minimax: {
-                  baseUrl: "https://api.minimax.io/anthropic",
-                  apiKey: "sk-test",
-                  api: "anthropic-messages",
-                  models: [makeModelDefinition("MiniMax-M2.5", "MiniMax M2.5")],
-                },
-                lmstudio: {
-                  baseUrl: "http://127.0.0.1:1234/v1",
-                  apiKey: "lmstudio",
-                  api: "openai-responses",
-                  models: [makeModelDefinition("minimax-m2.5-gs32", "MiniMax M2.5 GS32")],
-                },
+          agents: {
+            defaults: {
+              model: { primary: "minimax/MiniMax-M2.1" },
+              workspace: path.join(home, "openclaw"),
+              models: {
+                "minimax/MiniMax-M2.1": {},
+                "minimax/MiniMax-M2.1-lightning": {},
               },
             },
           },
-        },
-        {
-          body: "/model minimax/m2.5",
-          storePath: path.join(home, "sessions-provider-fuzzy.json"),
-          config: {
-            agents: {
-              defaults: {
-                model: { primary: "minimax/MiniMax-M2.5" },
-                workspace: path.join(home, "openclaw"),
-                models: {
-                  "minimax/MiniMax-M2.5": {},
-                  "minimax/MiniMax-M2.5-Lightning": {},
-                },
-              },
-            },
-            models: {
-              mode: "merge",
-              providers: {
-                minimax: {
-                  baseUrl: "https://api.minimax.io/anthropic",
-                  apiKey: "sk-test",
-                  api: "anthropic-messages",
-                  models: [
-                    makeModelDefinition("MiniMax-M2.5", "MiniMax M2.5"),
-                    makeModelDefinition("MiniMax-M2.5-Lightning", "MiniMax M2.5 Lightning"),
-                  ],
-                },
+          models: {
+            mode: "merge",
+            providers: {
+              minimax: {
+                baseUrl: "https://api.minimax.io/anthropic",
+                apiKey: "sk-test",
+                api: "anthropic-messages",
+                models: [
+                  makeModelDefinition("MiniMax-M2.1", "MiniMax M2.1"),
+                  makeModelDefinition("MiniMax-M2.1-lightning", "MiniMax M2.1 Lightning"),
+                ],
               },
             },
           },
-        },
-      ]) {
-        await getReplyFromConfig(
-          { Body: testCase.body, From: "+1222", To: "+1222", CommandAuthorized: true },
-          {},
-          {
-            ...testCase.config,
-            session: { store: testCase.storePath },
-          } as unknown as OpenClawConfig,
-        );
-        assertModelSelection(testCase.storePath);
-      }
+          session: { store: storePath },
+        } as unknown as OpenClawConfig,
+      );
+
+      assertModelSelection(storePath);
       expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
     });
   });
@@ -277,7 +304,7 @@ describe("directive behavior", () => {
       expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
     });
   });
-  it("queues system events for model, elevated, and reasoning directives", async () => {
+  it("queues a system event when switching models", async () => {
     await withTempHome(async (home) => {
       drainSystemEvents(MAIN_SESSION_KEY);
       await getReplyFromConfig(
@@ -286,9 +313,13 @@ describe("directive behavior", () => {
         makeModelSwitchConfig(home),
       );
 
-      let events = drainSystemEvents(MAIN_SESSION_KEY);
+      const events = drainSystemEvents(MAIN_SESSION_KEY);
       expect(events).toContain("Model switched to Opus (anthropic/claude-opus-4-5).");
-
+      expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
+    });
+  });
+  it("queues a system event when toggling elevated", async () => {
+    await withTempHome(async (home) => {
       drainSystemEvents(MAIN_SESSION_KEY);
 
       await getReplyFromConfig(
@@ -307,9 +338,12 @@ describe("directive behavior", () => {
         ),
       );
 
-      events = drainSystemEvents(MAIN_SESSION_KEY);
+      const events = drainSystemEvents(MAIN_SESSION_KEY);
       expect(events.some((e) => e.includes("Elevated ASK"))).toBe(true);
-
+    });
+  });
+  it("queues a system event when toggling reasoning", async () => {
+    await withTempHome(async (home) => {
       drainSystemEvents(MAIN_SESSION_KEY);
 
       await getReplyFromConfig(
@@ -324,9 +358,8 @@ describe("directive behavior", () => {
         makeWhatsAppDirectiveConfig(home, { model: { primary: "openai/gpt-4.1-mini" } }),
       );
 
-      events = drainSystemEvents(MAIN_SESSION_KEY);
+      const events = drainSystemEvents(MAIN_SESSION_KEY);
       expect(events.some((e) => e.includes("Reasoning STREAM"))).toBe(true);
-      expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
     });
   });
 });

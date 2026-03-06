@@ -25,8 +25,7 @@ enum GatewaySettingsStore {
     private static let instanceIdAccount = "instanceId"
     private static let preferredGatewayStableIDAccount = "preferredStableID"
     private static let lastDiscoveredGatewayStableIDAccount = "lastDiscoveredStableID"
-    private static let lastGatewayConnectionAccount = "lastConnection"
-    private static let talkProviderApiKeyAccountPrefix = "provider.apiKey."
+    private static let talkElevenLabsApiKeyAccount = "elevenlabs.apiKey"
 
     static func bootstrapPersistence() {
         self.ensureStableInstanceID()
@@ -141,130 +140,74 @@ enum GatewaySettingsStore {
         }
     }
 
-    private enum LastGatewayKind: String, Codable {
+    private enum LastGatewayKind: String {
         case manual
         case discovered
     }
 
-    /// JSON-serializable envelope stored as a single Keychain entry.
-    private struct LastGatewayConnectionData: Codable {
-        var kind: LastGatewayKind
-        var stableID: String
-        var useTLS: Bool
-        var host: String?
-        var port: Int?
-    }
-
-    static func loadTalkProviderApiKey(provider: String) -> String? {
-        guard let providerId = self.normalizedTalkProviderID(provider) else { return nil }
-        let account = self.talkProviderApiKeyAccount(providerId: providerId)
+    static func loadTalkElevenLabsApiKey() -> String? {
         let value = KeychainStore.loadString(
             service: self.talkService,
-            account: account)?
+            account: self.talkElevenLabsApiKeyAccount)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if value?.isEmpty == false { return value }
         return nil
     }
 
-    static func saveTalkProviderApiKey(_ apiKey: String?, provider: String) {
-        guard let providerId = self.normalizedTalkProviderID(provider) else { return }
-        let account = self.talkProviderApiKeyAccount(providerId: providerId)
+    static func saveTalkElevenLabsApiKey(_ apiKey: String?) {
         let trimmed = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty {
-            _ = KeychainStore.delete(service: self.talkService, account: account)
+            _ = KeychainStore.delete(service: self.talkService, account: self.talkElevenLabsApiKeyAccount)
             return
         }
-        _ = KeychainStore.saveString(trimmed, service: self.talkService, account: account)
+        _ = KeychainStore.saveString(
+            trimmed,
+            service: self.talkService,
+            account: self.talkElevenLabsApiKeyAccount)
     }
 
     static func saveLastGatewayConnectionManual(host: String, port: Int, useTLS: Bool, stableID: String) {
-        let payload = LastGatewayConnectionData(
-            kind: .manual, stableID: stableID, useTLS: useTLS, host: host, port: port)
-        self.saveLastGatewayConnectionData(payload)
+        let defaults = UserDefaults.standard
+        defaults.set(LastGatewayKind.manual.rawValue, forKey: self.lastGatewayKindDefaultsKey)
+        defaults.set(host, forKey: self.lastGatewayHostDefaultsKey)
+        defaults.set(port, forKey: self.lastGatewayPortDefaultsKey)
+        defaults.set(useTLS, forKey: self.lastGatewayTlsDefaultsKey)
+        defaults.set(stableID, forKey: self.lastGatewayStableIDDefaultsKey)
     }
 
     static func saveLastGatewayConnectionDiscovered(stableID: String, useTLS: Bool) {
-        let payload = LastGatewayConnectionData(
-            kind: .discovered, stableID: stableID, useTLS: useTLS)
-        self.saveLastGatewayConnectionData(payload)
+        let defaults = UserDefaults.standard
+        defaults.set(LastGatewayKind.discovered.rawValue, forKey: self.lastGatewayKindDefaultsKey)
+        defaults.removeObject(forKey: self.lastGatewayHostDefaultsKey)
+        defaults.removeObject(forKey: self.lastGatewayPortDefaultsKey)
+        defaults.set(useTLS, forKey: self.lastGatewayTlsDefaultsKey)
+        defaults.set(stableID, forKey: self.lastGatewayStableIDDefaultsKey)
     }
 
     static func loadLastGatewayConnection() -> LastGatewayConnection? {
-        // Migrate legacy UserDefaults entries on first access.
-        self.migrateLastGatewayFromUserDefaultsIfNeeded()
-
-        guard let json = KeychainStore.loadString(
-            service: self.gatewayService, account: self.lastGatewayConnectionAccount),
-            let data = json.data(using: .utf8),
-            let stored = try? JSONDecoder().decode(LastGatewayConnectionData.self, from: data)
-        else { return nil }
-
-        let stableID = stored.stableID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stableID.isEmpty else { return nil }
-
-        if stored.kind == .discovered {
-            return .discovered(stableID: stableID, useTLS: stored.useTLS)
-        }
-
-        let host = (stored.host ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let port = stored.port ?? 0
-        guard !host.isEmpty, port > 0, port <= 65535 else { return nil }
-        return .manual(host: host, port: port, useTLS: stored.useTLS, stableID: stableID)
-    }
-
-    static func clearLastGatewayConnection(defaults: UserDefaults = .standard) {
-        _ = KeychainStore.delete(
-            service: self.gatewayService, account: self.lastGatewayConnectionAccount)
-        // Clean up any legacy UserDefaults entries.
-        defaults.removeObject(forKey: self.lastGatewayKindDefaultsKey)
-        defaults.removeObject(forKey: self.lastGatewayHostDefaultsKey)
-        defaults.removeObject(forKey: self.lastGatewayPortDefaultsKey)
-        defaults.removeObject(forKey: self.lastGatewayTlsDefaultsKey)
-        defaults.removeObject(forKey: self.lastGatewayStableIDDefaultsKey)
-    }
-
-    @discardableResult
-    private static func saveLastGatewayConnectionData(_ payload: LastGatewayConnectionData) -> Bool {
-        guard let data = try? JSONEncoder().encode(payload),
-              let json = String(data: data, encoding: .utf8)
-        else { return false }
-        return KeychainStore.saveString(
-            json, service: self.gatewayService, account: self.lastGatewayConnectionAccount)
-    }
-
-    /// Migrate legacy UserDefaults gateway.last.* keys into a single Keychain entry.
-    private static func migrateLastGatewayFromUserDefaultsIfNeeded() {
         let defaults = UserDefaults.standard
         let stableID = defaults.string(forKey: self.lastGatewayStableIDDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !stableID.isEmpty else { return }
-
-        // Already migrated if Keychain entry exists.
-        if KeychainStore.loadString(
-            service: self.gatewayService, account: self.lastGatewayConnectionAccount) != nil
-        {
-            // Clean up legacy keys.
-            self.removeLastGatewayDefaults(defaults)
-            return
-        }
-
+        guard !stableID.isEmpty else { return nil }
         let useTLS = defaults.bool(forKey: self.lastGatewayTlsDefaultsKey)
         let kindRaw = defaults.string(forKey: self.lastGatewayKindDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let kind = LastGatewayKind(rawValue: kindRaw) ?? .manual
-        let host = defaults.string(forKey: self.lastGatewayHostDefaultsKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let port = defaults.object(forKey: self.lastGatewayPortDefaultsKey) as? Int
 
-        let payload = LastGatewayConnectionData(
-            kind: kind, stableID: stableID, useTLS: useTLS,
-            host: kind == .manual ? host : nil,
-            port: kind == .manual ? port : nil)
-        guard self.saveLastGatewayConnectionData(payload) else { return }
-        self.removeLastGatewayDefaults(defaults)
+        if kind == .discovered {
+            return .discovered(stableID: stableID, useTLS: useTLS)
+        }
+
+        let host = defaults.string(forKey: self.lastGatewayHostDefaultsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let port = defaults.integer(forKey: self.lastGatewayPortDefaultsKey)
+
+        // Back-compat: older builds persisted manual-style host/port without a kind marker.
+        guard !host.isEmpty, port > 0, port <= 65535 else { return nil }
+        return .manual(host: host, port: port, useTLS: useTLS, stableID: stableID)
     }
 
-    private static func removeLastGatewayDefaults(_ defaults: UserDefaults) {
+    static func clearLastGatewayConnection(defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: self.lastGatewayKindDefaultsKey)
         defaults.removeObject(forKey: self.lastGatewayHostDefaultsKey)
         defaults.removeObject(forKey: self.lastGatewayPortDefaultsKey)
@@ -335,15 +278,6 @@ enum GatewaySettingsStore {
         "gateway-password.\(instanceId)"
     }
 
-    private static func talkProviderApiKeyAccount(providerId: String) -> String {
-        self.talkProviderApiKeyAccountPrefix + providerId
-    }
-
-    private static func normalizedTalkProviderID(_ provider: String) -> String? {
-        let trimmed = provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
     private static func ensureStableInstanceID() {
         let defaults = UserDefaults.standard
 
@@ -411,15 +345,9 @@ enum GatewayDiagnostics {
     private static let maxLogBytes: Int64 = 512 * 1024
     private static let keepLogBytes: Int64 = 256 * 1024
     private static let logSizeCheckEveryWrites = 50
-    private static let logWritesSinceCheck = OSAllocatedUnfairLock(initialState: 0)
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
+    nonisolated(unsafe) private static var logWritesSinceCheck = 0
     private static var fileURL: URL? {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
             .appendingPathComponent("openclaw-gateway.log")
     }
 
@@ -466,41 +394,32 @@ enum GatewayDiagnostics {
         }
     }
 
-    private static func applyFileProtection(url: URL) {
-        try? FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-            ofItemAtPath: url.path)
-    }
-
     static func bootstrap() {
         guard let url = fileURL else { return }
         queue.async {
             self.truncateLogIfNeeded(url: url)
-            let timestamp = self.isoFormatter.string(from: Date())
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let timestamp = formatter.string(from: Date())
             let line = "[\(timestamp)] gateway diagnostics started\n"
             if let data = line.data(using: .utf8) {
                 self.appendToLog(url: url, data: data)
-                self.applyFileProtection(url: url)
             }
         }
     }
 
     static func log(_ message: String) {
-        let timestamp = self.isoFormatter.string(from: Date())
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let timestamp = formatter.string(from: Date())
         let line = "[\(timestamp)] \(message)"
         logger.info("\(line, privacy: .public)")
 
         guard let url = fileURL else { return }
         queue.async {
-            let shouldTruncate = self.logWritesSinceCheck.withLock { count in
-                count += 1
-                if count >= self.logSizeCheckEveryWrites {
-                    count = 0
-                    return true
-                }
-                return false
-            }
-            if shouldTruncate {
+            self.logWritesSinceCheck += 1
+            if self.logWritesSinceCheck >= self.logSizeCheckEveryWrites {
+                self.logWritesSinceCheck = 0
                 self.truncateLogIfNeeded(url: url)
             }
             let entry = line + "\n"

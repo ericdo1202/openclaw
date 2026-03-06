@@ -1,7 +1,6 @@
 import { resolveTextChunkLimit } from "../auto-reply/chunk.js";
 import { getChannelDock } from "../channels/dock.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveAccountEntry } from "../routing/account-lookup.js";
 import { normalizeAccountId } from "../routing/session-key.js";
 
 const DEFAULT_DISCORD_DRAFT_STREAM_MIN = 200;
@@ -20,8 +19,9 @@ export function resolveDiscordDraftStreamingChunking(
     fallbackLimit: providerChunkLimit,
   });
   const normalizedAccountId = normalizeAccountId(accountId);
-  const accountCfg = resolveAccountEntry(cfg?.channels?.discord?.accounts, normalizedAccountId);
-  const draftCfg = accountCfg?.draftChunk ?? cfg?.channels?.discord?.draftChunk;
+  const draftCfg =
+    cfg?.channels?.discord?.accounts?.[normalizedAccountId]?.draftChunk ??
+    cfg?.channels?.discord?.draftChunk;
 
   const maxRequested = Math.max(
     1,

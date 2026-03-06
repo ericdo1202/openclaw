@@ -4,10 +4,6 @@ const CHAT_ID_PREFIX = "oc_";
 const OPEN_ID_PREFIX = "ou_";
 const USER_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
 
-function stripProviderPrefix(raw: string): string {
-  return raw.replace(/^(feishu|lark):/i, "").trim();
-}
-
 export function detectIdType(id: string): FeishuIdType | null {
   const trimmed = id.trim();
   if (trimmed.startsWith(CHAT_ID_PREFIX)) {
@@ -28,28 +24,18 @@ export function normalizeFeishuTarget(raw: string): string | null {
     return null;
   }
 
-  const withoutProvider = stripProviderPrefix(trimmed);
-  const lowered = withoutProvider.toLowerCase();
+  const lowered = trimmed.toLowerCase();
   if (lowered.startsWith("chat:")) {
-    return withoutProvider.slice("chat:".length).trim() || null;
-  }
-  if (lowered.startsWith("group:")) {
-    return withoutProvider.slice("group:".length).trim() || null;
-  }
-  if (lowered.startsWith("channel:")) {
-    return withoutProvider.slice("channel:".length).trim() || null;
+    return trimmed.slice("chat:".length).trim() || null;
   }
   if (lowered.startsWith("user:")) {
-    return withoutProvider.slice("user:".length).trim() || null;
-  }
-  if (lowered.startsWith("dm:")) {
-    return withoutProvider.slice("dm:".length).trim() || null;
+    return trimmed.slice("user:".length).trim() || null;
   }
   if (lowered.startsWith("open_id:")) {
-    return withoutProvider.slice("open_id:".length).trim() || null;
+    return trimmed.slice("open_id:".length).trim() || null;
   }
 
-  return withoutProvider;
+  return trimmed;
 }
 
 export function formatFeishuTarget(id: string, type?: FeishuIdType): string {
@@ -65,21 +51,6 @@ export function formatFeishuTarget(id: string, type?: FeishuIdType): string {
 
 export function resolveReceiveIdType(id: string): "chat_id" | "open_id" | "user_id" {
   const trimmed = id.trim();
-  const lowered = trimmed.toLowerCase();
-  if (
-    lowered.startsWith("chat:") ||
-    lowered.startsWith("group:") ||
-    lowered.startsWith("channel:")
-  ) {
-    return "chat_id";
-  }
-  if (lowered.startsWith("open_id:")) {
-    return "open_id";
-  }
-  if (lowered.startsWith("user:") || lowered.startsWith("dm:")) {
-    const normalized = trimmed.replace(/^(user|dm):/i, "").trim();
-    return normalized.startsWith(OPEN_ID_PREFIX) ? "open_id" : "user_id";
-  }
   if (trimmed.startsWith(CHAT_ID_PREFIX)) {
     return "chat_id";
   }
@@ -90,11 +61,11 @@ export function resolveReceiveIdType(id: string): "chat_id" | "open_id" | "user_
 }
 
 export function looksLikeFeishuId(raw: string): boolean {
-  const trimmed = stripProviderPrefix(raw.trim());
+  const trimmed = raw.trim();
   if (!trimmed) {
     return false;
   }
-  if (/^(chat|group|channel|user|dm|open_id):/i.test(trimmed)) {
+  if (/^(chat|user|open_id):/i.test(trimmed)) {
     return true;
   }
   if (trimmed.startsWith(CHAT_ID_PREFIX)) {

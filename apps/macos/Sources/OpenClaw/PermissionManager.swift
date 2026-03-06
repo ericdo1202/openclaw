@@ -229,37 +229,61 @@ enum PermissionManager {
 
 enum NotificationPermissionHelper {
     static func openSettings() {
-        SystemSettingsURLSupport.openFirst([
+        let candidates = [
             "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
             "x-apple.systempreferences:com.apple.preference.notifications",
-        ])
+        ]
+
+        for candidate in candidates {
+            if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
     }
 }
 
 enum MicrophonePermissionHelper {
     static func openSettings() {
-        SystemSettingsURLSupport.openFirst([
+        let candidates = [
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
             "x-apple.systempreferences:com.apple.preference.security",
-        ])
+        ]
+
+        for candidate in candidates {
+            if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
     }
 }
 
 enum CameraPermissionHelper {
     static func openSettings() {
-        SystemSettingsURLSupport.openFirst([
+        let candidates = [
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
             "x-apple.systempreferences:com.apple.preference.security",
-        ])
+        ]
+
+        for candidate in candidates {
+            if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
     }
 }
 
 enum LocationPermissionHelper {
     static func openSettings() {
-        SystemSettingsURLSupport.openFirst([
+        let candidates = [
             "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices",
             "x-apple.systempreferences:com.apple.preference.security",
-        ])
+        ]
+
+        for candidate in candidates {
+            if let url = URL(string: candidate), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
     }
 }
 

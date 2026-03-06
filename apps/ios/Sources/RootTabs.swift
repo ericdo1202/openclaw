@@ -70,14 +70,38 @@ struct RootTabs: View {
             self.toastDismissTask?.cancel()
             self.toastDismissTask = nil
         }
-        .gatewayActionsDialog(
+        .confirmationDialog(
+            "Gateway",
             isPresented: self.$showGatewayActions,
-            onDisconnect: { self.appModel.disconnectGateway() },
-            onOpenSettings: { self.selectedTab = 2 })
+            titleVisibility: .visible)
+        {
+            Button("Disconnect", role: .destructive) {
+                self.appModel.disconnectGateway()
+            }
+            Button("Open Settings") {
+                self.selectedTab = 2
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Disconnect from the gateway?")
+        }
     }
 
     private var gatewayStatus: StatusPill.GatewayState {
-        GatewayStatusBuilder.build(appModel: self.appModel)
+        if self.appModel.gatewayServerName != nil { return .connected }
+
+        let text = self.appModel.gatewayStatusText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.localizedCaseInsensitiveContains("connecting") ||
+            text.localizedCaseInsensitiveContains("reconnecting")
+        {
+            return .connecting
+        }
+
+        if text.localizedCaseInsensitiveContains("error") {
+            return .error
+        }
+
+        return .disconnected
     }
 
     private var statusActivity: StatusPill.Activity? {

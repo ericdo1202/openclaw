@@ -1,15 +1,4 @@
-import {
-  extractShellWrapperCommand,
-  hasEnvManipulationBeforeShellWrapper,
-  normalizeExecutableToken,
-  unwrapDispatchWrappersForResolution,
-  unwrapKnownShellMultiplexerInvocation,
-} from "./exec-wrapper-resolution.js";
-import {
-  POSIX_INLINE_COMMAND_FLAGS,
-  POWERSHELL_INLINE_COMMAND_FLAGS,
-  resolveInlineCommandMatch,
-} from "./shell-inline-command.js";
+import { extractShellWrapperCommand } from "./exec-wrapper-resolution.js";
 
 export type SystemRunCommandValidation =
   | {
@@ -40,62 +29,21 @@ export type ResolvedSystemRunCommand =
 export function formatExecCommand(argv: string[]): string {
   return argv
     .map((arg) => {
-      if (arg.length === 0) {
+      const trimmed = arg.trim();
+      if (!trimmed) {
         return '""';
       }
-      const needsQuotes = /\s|"/.test(arg);
+      const needsQuotes = /\s|"/.test(trimmed);
       if (!needsQuotes) {
-        return arg;
+        return trimmed;
       }
-      return `"${arg.replace(/"/g, '\\"')}"`;
+      return `"${trimmed.replace(/"/g, '\\"')}"`;
     })
     .join(" ");
 }
 
 export function extractShellCommandFromArgv(argv: string[]): string | null {
   return extractShellWrapperCommand(argv).command;
-}
-
-const POSIX_OR_POWERSHELL_INLINE_WRAPPER_NAMES = new Set([
-  "ash",
-  "bash",
-  "dash",
-  "fish",
-  "ksh",
-  "powershell",
-  "pwsh",
-  "sh",
-  "zsh",
-]);
-
-function unwrapShellWrapperArgv(argv: string[]): string[] {
-  const dispatchUnwrapped = unwrapDispatchWrappersForResolution(argv);
-  const shellMultiplexer = unwrapKnownShellMultiplexerInvocation(dispatchUnwrapped);
-  return shellMultiplexer.kind === "unwrapped" ? shellMultiplexer.argv : dispatchUnwrapped;
-}
-
-function hasTrailingPositionalArgvAfterInlineCommand(argv: string[]): boolean {
-  const wrapperArgv = unwrapShellWrapperArgv(argv);
-  const token0 = wrapperArgv[0]?.trim();
-  if (!token0) {
-    return false;
-  }
-
-  const wrapper = normalizeExecutableToken(token0);
-  if (!POSIX_OR_POWERSHELL_INLINE_WRAPPER_NAMES.has(wrapper)) {
-    return false;
-  }
-
-  const inlineCommandIndex =
-    wrapper === "powershell" || wrapper === "pwsh"
-      ? resolveInlineCommandMatch(wrapperArgv, POWERSHELL_INLINE_COMMAND_FLAGS).valueTokenIndex
-      : resolveInlineCommandMatch(wrapperArgv, POSIX_INLINE_COMMAND_FLAGS, {
-          allowCombinedC: true,
-        }).valueTokenIndex;
-  if (inlineCommandIndex === null) {
-    return false;
-  }
-  return wrapperArgv.slice(inlineCommandIndex + 1).some((entry) => entry.trim().length > 0);
 }
 
 export function validateSystemRunCommandConsistency(params: {
@@ -106,16 +54,8 @@ export function validateSystemRunCommandConsistency(params: {
     typeof params.rawCommand === "string" && params.rawCommand.trim().length > 0
       ? params.rawCommand.trim()
       : null;
-  const shellWrapperResolution = extractShellWrapperCommand(params.argv);
-  const shellCommand = shellWrapperResolution.command;
-  const shellWrapperPositionalArgv = hasTrailingPositionalArgvAfterInlineCommand(params.argv);
-  const envManipulationBeforeShellWrapper =
-    shellWrapperResolution.isWrapper && hasEnvManipulationBeforeShellWrapper(params.argv);
-  const mustBindDisplayToFullArgv = envManipulationBeforeShellWrapper || shellWrapperPositionalArgv;
-  const inferred =
-    shellCommand !== null && !mustBindDisplayToFullArgv
-      ? shellCommand.trim()
-      : formatExecCommand(params.argv);
+  const shellCommand = extractShellWrapperCommand(params.argv).command;
+  const inferred = shellCommand !== null ? shellCommand.trim() : formatExecCommand(params.argv);
 
   if (raw && raw !== inferred) {
     return {
@@ -132,15 +72,10 @@ export function validateSystemRunCommandConsistency(params: {
   return {
     ok: true,
     // Only treat this as a shell command when argv is a recognized shell wrapper.
-    // For direct argv execution and shell wrappers with env prelude modifiers,
-    // rawCommand is purely display/approval text and must match the formatted argv.
-    shellCommand:
-      shellCommand !== null
-        ? envManipulationBeforeShellWrapper
-          ? shellCommand
-          : (raw ?? shellCommand)
-        : null,
-    cmdText: raw ?? inferred,
+    // For direct argv execution, rawCommand is purely display/approval text and
+    // must match the formatted argv.
+    shellCommand: shellCommand !== null ? (raw ?? shellCommand) : null,
+    cmdText: raw ?? shellCommand ?? inferred,
   };
 }
 

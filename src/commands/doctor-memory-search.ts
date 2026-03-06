@@ -5,8 +5,6 @@ import { resolveApiKeyForProvider } from "../agents/model-auth.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveMemoryBackendConfig } from "../memory/backend-config.js";
-import { DEFAULT_LOCAL_MODEL } from "../memory/embeddings.js";
-import { hasConfiguredMemorySecretInput } from "../memory/secret-input.js";
 import { note } from "../terminal/note.js";
 import { resolveUserPath } from "../utils.js";
 
@@ -14,20 +12,11 @@ import { resolveUserPath } from "../utils.js";
  * Check whether memory search has a usable embedding provider.
  * Runs as part of `openclaw doctor` — config-only, no network calls.
  */
-export async function noteMemorySearchHealth(
-  cfg: OpenClawConfig,
-  opts?: {
-    gatewayMemoryProbe?: {
-      checked: boolean;
-      ready: boolean;
-      error?: string;
-    };
-  },
-): Promise<void> {
+export async function noteMemorySearchHealth(cfg: OpenClawConfig): Promise<void> {
   const agentId = resolveDefaultAgentId(cfg);
   const agentDir = resolveAgentDir(cfg, agentId);
   const resolved = resolveMemorySearchConfig(cfg, agentId);
-  const hasRemoteApiKey = hasConfiguredMemorySecretInput(resolved?.remote?.apiKey);
+  const hasRemoteApiKey = Boolean(resolved?.remote?.apiKey?.trim());
 
   if (!resolved) {
     note("Memory search is explicitly disabled (enabled: false).", "Memory search");
@@ -44,26 +33,8 @@ export async function noteMemorySearchHealth(
   // If a specific provider is configured (not "auto"), check only that one.
   if (resolved.provider !== "auto") {
     if (resolved.provider === "local") {
-      if (hasLocalEmbeddings(resolved.local, true)) {
-        // Model path looks valid (explicit file, hf: URL, or default model).
-        // If a gateway probe is available and reports not-ready, warn anyway —
-        // the model download or node-llama-cpp setup may have failed at runtime.
-        if (opts?.gatewayMemoryProbe?.checked && !opts.gatewayMemoryProbe.ready) {
-          const detail = opts.gatewayMemoryProbe.error?.trim();
-          note(
-            [
-              'Memory search provider is set to "local" and a model path is configured,',
-              "but the gateway reports local embeddings are not ready.",
-              detail ? `Gateway probe: ${detail}` : null,
-              "",
-              `Verify: ${formatCliCommand("openclaw memory status --deep")}`,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-            "Memory search",
-          );
-        }
-        return;
+      if (hasLocalEmbeddings(resolved.local)) {
+        return; // local model file exists
       }
       note(
         [
@@ -83,28 +54,15 @@ export async function noteMemorySearchHealth(
     if (hasRemoteApiKey || (await hasApiKeyForProvider(resolved.provider, cfg, agentDir))) {
       return;
     }
-    if (opts?.gatewayMemoryProbe?.checked && opts.gatewayMemoryProbe.ready) {
-      note(
-        [
-          `Memory search provider is set to "${resolved.provider}" but the API key was not found in the CLI environment.`,
-          "The running gateway reports memory embeddings are ready for the default agent.",
-          `Verify: ${formatCliCommand("openclaw memory status --deep")}`,
-        ].join("\n"),
-        "Memory search",
-      );
-      return;
-    }
-    const gatewayProbeWarning = buildGatewayProbeWarning(opts?.gatewayMemoryProbe);
     const envVar = providerEnvVar(resolved.provider);
     note(
       [
         `Memory search provider is set to "${resolved.provider}" but no API key was found.`,
         `Semantic recall will not work without a valid API key.`,
-        gatewayProbeWarning ? gatewayProbeWarning : null,
         "",
         "Fix (pick one):",
         `- Set ${envVar} in your environment`,
-        `- Configure credentials: ${formatCliCommand("openclaw configure --section model")}`,
+        `- Add credentials: ${formatCliCommand(`openclaw auth add --provider ${resolved.provider}`)}`,
         `- To disable: ${formatCliCommand("openclaw config set agents.defaults.memorySearch.enabled false")}`,
         "",
         `Verify: ${formatCliCommand("openclaw memory status --deep")}`,
@@ -124,28 +82,14 @@ export async function noteMemorySearchHealth(
     }
   }
 
-  if (opts?.gatewayMemoryProbe?.checked && opts.gatewayMemoryProbe.ready) {
-    note(
-      [
-        'Memory search provider is set to "auto" but the API key was not found in the CLI environment.',
-        "The running gateway reports memory embeddings are ready for the default agent.",
-        `Verify: ${formatCliCommand("openclaw memory status --deep")}`,
-      ].join("\n"),
-      "Memory search",
-    );
-    return;
-  }
-  const gatewayProbeWarning = buildGatewayProbeWarning(opts?.gatewayMemoryProbe);
-
   note(
     [
       "Memory search is enabled but no embedding provider is configured.",
       "Semantic recall will not work without an embedding provider.",
-      gatewayProbeWarning ? gatewayProbeWarning : null,
       "",
       "Fix (pick one):",
       "- Set OPENAI_API_KEY, GEMINI_API_KEY, VOYAGE_API_KEY, or MISTRAL_API_KEY in your environment",
-      `- Configure credentials: ${formatCliCommand("openclaw configure --section model")}`,
+      `- Add credentials: ${formatCliCommand("openclaw auth add --provider openai")}`,
       `- For local embeddings: configure agents.defaults.memorySearch.provider and local model path`,
       `- To disable: ${formatCliCommand("openclaw config set agents.defaults.memorySearch.enabled false")}`,
       "",
@@ -155,20 +99,8 @@ export async function noteMemorySearchHealth(
   );
 }
 
-/**
- * Check whether local embeddings are available.
- *
- * When `useDefaultFallback` is true (explicit `provider: "local"`), an empty
- * modelPath is treated as available because the runtime falls back to
- * DEFAULT_LOCAL_MODEL (an auto-downloaded HuggingFace model).
- *
- * When false (provider: "auto"), we only consider local available if the user
- * explicitly configured a local file path — matching `canAutoSelectLocal()`
- * in the runtime, which skips local for empty/hf: model paths.
- */
-function hasLocalEmbeddings(local: { modelPath?: string }, useDefaultFallback = false): boolean {
-  const modelPath =
-    local.modelPath?.trim() || (useDefaultFallback ? DEFAULT_LOCAL_MODEL : undefined);
+function hasLocalEmbeddings(local: { modelPath?: string }): boolean {
+  const modelPath = local.modelPath?.trim();
   if (!modelPath) {
     return false;
   }
@@ -187,7 +119,7 @@ function hasLocalEmbeddings(local: { modelPath?: string }, useDefaultFallback = 
 }
 
 async function hasApiKeyForProvider(
-  provider: "openai" | "gemini" | "voyage" | "mistral" | "ollama",
+  provider: "openai" | "gemini" | "voyage" | "mistral",
   cfg: OpenClawConfig,
   agentDir: string,
 ): Promise<boolean> {
@@ -212,22 +144,4 @@ function providerEnvVar(provider: string): string {
     default:
       return `${provider.toUpperCase()}_API_KEY`;
   }
-}
-
-function buildGatewayProbeWarning(
-  probe:
-    | {
-        checked: boolean;
-        ready: boolean;
-        error?: string;
-      }
-    | undefined,
-): string | null {
-  if (!probe?.checked || probe.ready) {
-    return null;
-  }
-  const detail = probe.error?.trim();
-  return detail
-    ? `Gateway memory probe for default agent is not ready: ${detail}`
-    : "Gateway memory probe for default agent is not ready.";
 }

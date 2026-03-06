@@ -3,10 +3,6 @@ import { loginOpenAICodex } from "@mariozechner/pi-ai";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { createVpsAwareOAuthHandlers } from "./oauth-flow.js";
-import {
-  formatOpenAIOAuthTlsPreflightFix,
-  runOpenAIOAuthTlsPreflight,
-} from "./oauth-tls-preflight.js";
 
 export async function loginOpenAICodexOAuth(params: {
   prompter: WizardPrompter;
@@ -16,13 +12,6 @@ export async function loginOpenAICodexOAuth(params: {
   localBrowserMessage?: string;
 }): Promise<OAuthCredentials | null> {
   const { prompter, runtime, isRemote, openUrl, localBrowserMessage } = params;
-  const preflight = await runOpenAIOAuthTlsPreflight();
-  if (!preflight.ok && preflight.kind === "tls-cert") {
-    const hint = formatOpenAIOAuthTlsPreflightFix(preflight);
-    runtime.error(hint);
-    await prompter.note(hint, "OAuth prerequisites");
-    throw new Error(preflight.message);
-  }
 
   await prompter.note(
     isRemote
@@ -41,7 +30,7 @@ export async function loginOpenAICodexOAuth(params: {
 
   const spin = prompter.progress("Starting OAuth flow…");
   try {
-    const { onAuth: baseOnAuth, onPrompt } = createVpsAwareOAuthHandlers({
+    const { onAuth, onPrompt } = createVpsAwareOAuthHandlers({
       isRemote,
       prompter,
       runtime,
@@ -51,7 +40,7 @@ export async function loginOpenAICodexOAuth(params: {
     });
 
     const creds = await loginOpenAICodex({
-      onAuth: baseOnAuth,
+      onAuth,
       onPrompt,
       onProgress: (msg) => spin.update(msg),
     });

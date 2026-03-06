@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertMediaNotDataUrl, resolveSandboxedMediaSource } from "../../agents/sandbox-paths.js";
@@ -8,14 +9,30 @@ import type {
   ChannelThreadingToolContext,
 } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { createRootScopedReadFile } from "../../infra/fs-safe.js";
 import { extensionForMime } from "../../media/mime.js";
-import { readBooleanParam as readBooleanParamShared } from "../../plugin-sdk/boolean-param.js";
 import { parseSlackTarget } from "../../slack/targets.js";
 import { parseTelegramTarget } from "../../telegram/targets.js";
 import { loadWebMedia } from "../../web/media.js";
 
-export const readBooleanParam = readBooleanParamShared;
+export function readBooleanParam(
+  params: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const raw = params[key];
+  if (typeof raw === "boolean") {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim().toLowerCase();
+    if (trimmed === "true") {
+      return true;
+    }
+    if (trimmed === "false") {
+      return false;
+    }
+  }
+  return undefined;
+}
 
 export function resolveSlackAutoThreadId(params: {
   to: string;
@@ -152,62 +169,6 @@ function normalizeBase64Payload(params: { base64?: string; contentType?: string 
   };
 }
 
-export type AttachmentMediaPolicy =
-  | {
-      mode: "sandbox";
-      sandboxRoot: string;
-    }
-  | {
-      mode: "host";
-      localRoots?: readonly string[];
-    };
-
-export function resolveAttachmentMediaPolicy(params: {
-  sandboxRoot?: string;
-  mediaLocalRoots?: readonly string[];
-}): AttachmentMediaPolicy {
-  const sandboxRoot = params.sandboxRoot?.trim();
-  if (sandboxRoot) {
-    return {
-      mode: "sandbox",
-      sandboxRoot,
-    };
-  }
-  return {
-    mode: "host",
-    localRoots: params.mediaLocalRoots,
-  };
-}
-
-function buildAttachmentMediaLoadOptions(params: {
-  policy: AttachmentMediaPolicy;
-  maxBytes?: number;
-}):
-  | {
-      maxBytes?: number;
-      sandboxValidated: true;
-      readFile: (filePath: string) => Promise<Buffer>;
-    }
-  | {
-      maxBytes?: number;
-      localRoots?: readonly string[];
-    } {
-  if (params.policy.mode === "sandbox") {
-    const readSandboxFile = createRootScopedReadFile({
-      rootDir: params.policy.sandboxRoot.trim(),
-    });
-    return {
-      maxBytes: params.maxBytes,
-      sandboxValidated: true,
-      readFile: readSandboxFile,
-    };
-  }
-  return {
-    maxBytes: params.maxBytes,
-    localRoots: params.policy.localRoots,
-  };
-}
-
 async function hydrateAttachmentPayload(params: {
   cfg: OpenClawConfig;
   channel: ChannelId;
@@ -217,7 +178,6 @@ async function hydrateAttachmentPayload(params: {
   contentTypeParam?: string | null;
   mediaHint?: string | null;
   fileHint?: string | null;
-  mediaPolicy: AttachmentMediaPolicy;
 }) {
   const contentTypeParam = params.contentTypeParam ?? undefined;
   const rawBuffer = readStringParam(params.args, "buffer", { trim: false });
@@ -241,10 +201,12 @@ async function hydrateAttachmentPayload(params: {
       channel: params.channel,
       accountId: params.accountId,
     });
-    const media = await loadWebMedia(
-      mediaSource,
-      buildAttachmentMediaLoadOptions({ policy: params.mediaPolicy, maxBytes }),
-    );
+    // mediaSource already validated by normalizeSandboxMediaList; allow bypass but force explicit readFile.
+    const media = await loadWebMedia(mediaSource, {
+      maxBytes,
+      sandboxValidated: true,
+      readFile: (filePath: string) => fs.readFile(filePath),
+    });
     params.args.buffer = media.buffer.toString("base64");
     if (!contentTypeParam && media.contentType) {
       params.args.contentType = media.contentType;
@@ -265,10 +227,9 @@ async function hydrateAttachmentPayload(params: {
 
 export async function normalizeSandboxMediaParams(params: {
   args: Record<string, unknown>;
-  mediaPolicy: AttachmentMediaPolicy;
+  sandboxRoot?: string;
 }): Promise<void> {
-  const sandboxRoot =
-    params.mediaPolicy.mode === "sandbox" ? params.mediaPolicy.sandboxRoot.trim() : undefined;
+  const sandboxRoot = params.sandboxRoot?.trim();
   const mediaKeys: Array<"media" | "path" | "filePath"> = ["media", "path", "filePath"];
   for (const key of mediaKeys) {
     const raw = readStringParam(params.args, key, { trim: false });
@@ -319,7 +280,6 @@ async function hydrateAttachmentActionPayload(params: {
   dryRun?: boolean;
   /** If caption is missing, copy message -> caption. */
   allowMessageCaptionFallback?: boolean;
-  mediaPolicy: AttachmentMediaPolicy;
 }): Promise<void> {
   const mediaHint = readStringParam(params.args, "media", { trim: false });
   const fileHint =
@@ -345,31 +305,35 @@ async function hydrateAttachmentActionPayload(params: {
     contentTypeParam,
     mediaHint,
     fileHint,
-    mediaPolicy: params.mediaPolicy,
   });
 }
 
-export async function hydrateAttachmentParamsForAction(params: {
+export async function hydrateSetGroupIconParams(params: {
   cfg: OpenClawConfig;
   channel: ChannelId;
   accountId?: string | null;
   args: Record<string, unknown>;
   action: ChannelMessageActionName;
   dryRun?: boolean;
-  mediaPolicy: AttachmentMediaPolicy;
 }): Promise<void> {
-  if (params.action !== "sendAttachment" && params.action !== "setGroupIcon") {
+  if (params.action !== "setGroupIcon") {
     return;
   }
-  await hydrateAttachmentActionPayload({
-    cfg: params.cfg,
-    channel: params.channel,
-    accountId: params.accountId,
-    args: params.args,
-    dryRun: params.dryRun,
-    mediaPolicy: params.mediaPolicy,
-    allowMessageCaptionFallback: params.action === "sendAttachment",
-  });
+  await hydrateAttachmentActionPayload(params);
+}
+
+export async function hydrateSendAttachmentParams(params: {
+  cfg: OpenClawConfig;
+  channel: ChannelId;
+  accountId?: string | null;
+  args: Record<string, unknown>;
+  action: ChannelMessageActionName;
+  dryRun?: boolean;
+}): Promise<void> {
+  if (params.action !== "sendAttachment") {
+    return;
+  }
+  await hydrateAttachmentActionPayload({ ...params, allowMessageCaptionFallback: true });
 }
 
 export function parseButtonsParam(params: Record<string, unknown>): void {

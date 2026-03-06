@@ -27,26 +27,19 @@ struct GatewayDiscoveryHelpersTests {
             isLocal: false)
     }
 
-    private func assertSSHTarget(
-        for gateway: GatewayDiscoveryModel.DiscoveredGateway,
-        host: String,
-        port: Int)
-    {
-        guard let target = GatewayDiscoveryHelpers.sshTarget(for: gateway) else {
-            Issue.record("expected ssh target")
-            return
-        }
-        let parsed = CommandResolver.parseSSHTarget(target)
-        #expect(parsed?.host == host)
-        #expect(parsed?.port == port)
-    }
-
     @Test func sshTargetUsesResolvedServiceHostOnly() {
         let gateway = self.makeGateway(
             serviceHost: "resolved.example.ts.net",
             servicePort: 18789,
             sshPort: 2201)
-        assertSSHTarget(for: gateway, host: "resolved.example.ts.net", port: 2201)
+
+        guard let target = GatewayDiscoveryHelpers.sshTarget(for: gateway) else {
+            Issue.record("expected ssh target")
+            return
+        }
+        let parsed = CommandResolver.parseSSHTarget(target)
+        #expect(parsed?.host == "resolved.example.ts.net")
+        #expect(parsed?.port == 2201)
     }
 
     @Test func sshTargetAllowsMissingResolvedServicePort() {
@@ -54,7 +47,14 @@ struct GatewayDiscoveryHelpersTests {
             serviceHost: "resolved.example.ts.net",
             servicePort: nil,
             sshPort: 2201)
-        assertSSHTarget(for: gateway, host: "resolved.example.ts.net", port: 2201)
+
+        guard let target = GatewayDiscoveryHelpers.sshTarget(for: gateway) else {
+            Issue.record("expected ssh target")
+            return
+        }
+        let parsed = CommandResolver.parseSSHTarget(target)
+        #expect(parsed?.host == "resolved.example.ts.net")
+        #expect(parsed?.port == 2201)
     }
 
     @Test func sshTargetRejectsTxtOnlyGateways() {

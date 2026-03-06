@@ -1,6 +1,6 @@
 import { formatDurationHuman } from "../../../src/infra/format-time/format-duration.ts";
 import { formatRelativeTimestamp } from "../../../src/infra/format-time/format-relative.ts";
-import { stripAssistantInternalScaffolding } from "../../../src/shared/text/assistant-visible-text.js";
+import { stripReasoningTagsFromText } from "../../../src/shared/text/reasoning-tags.js";
 
 export { formatRelativeTimestamp, formatDurationHuman };
 
@@ -56,5 +56,5 @@ export function parseList(input: string): string[] {
 }
 
 export function stripThinkingTags(value: string): string {
-  return stripAssistantInternalScaffolding(value);
+  return stripReasoningTagsFromText(value, { mode: "preserve", trim: "start" });
 }

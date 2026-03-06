@@ -1,4 +1,4 @@
-import type { BaseProbeResult } from "openclaw/plugin-sdk/irc";
+import type { BaseProbeResult } from "openclaw/plugin-sdk";
 import type {
   BlockStreamingCoalesceConfig,
   DmConfig,
@@ -8,7 +8,7 @@ import type {
   GroupToolPolicyConfig,
   MarkdownConfig,
   OpenClawConfig,
-} from "openclaw/plugin-sdk/irc";
+} from "openclaw/plugin-sdk";
 
 export type IrcChannelConfig = {
   requireMention?: boolean;
@@ -32,11 +32,6 @@ export type IrcNickServConfig = {
 export type IrcAccountConfig = {
   name?: string;
   enabled?: boolean;
-  /**
-   * Break-glass override: allow nick-only allowlist matching.
-   * Default behavior requires host/user-qualified identities.
-   */
-  dangerouslyAllowNameMatching?: boolean;
   host?: string;
   port?: number;
   tls?: boolean;
@@ -68,7 +63,6 @@ export type IrcAccountConfig = {
 
 export type IrcConfig = IrcAccountConfig & {
   accounts?: Record<string, IrcAccountConfig>;
-  defaultAccount?: string;
 };
 
 export type CoreConfig = OpenClawConfig & {

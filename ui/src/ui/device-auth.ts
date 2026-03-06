@@ -1,10 +1,9 @@
 import {
-  clearDeviceAuthTokenFromStore,
   type DeviceAuthEntry,
-  loadDeviceAuthTokenFromStore,
-  storeDeviceAuthTokenInStore,
-} from "../../../src/shared/device-auth-store.js";
-import type { DeviceAuthStore } from "../../../src/shared/device-auth.js";
+  type DeviceAuthStore,
+  normalizeDeviceAuthRole,
+  normalizeDeviceAuthScopes,
+} from "../../../src/shared/device-auth.js";
 
 const STORAGE_KEY = "openclaw.device.auth.v1";
 
@@ -42,11 +41,16 @@ export function loadDeviceAuthToken(params: {
   deviceId: string;
   role: string;
 }): DeviceAuthEntry | null {
-  return loadDeviceAuthTokenFromStore({
-    adapter: { readStore, writeStore },
-    deviceId: params.deviceId,
-    role: params.role,
-  });
+  const store = readStore();
+  if (!store || store.deviceId !== params.deviceId) {
+    return null;
+  }
+  const role = normalizeDeviceAuthRole(params.role);
+  const entry = store.tokens[role];
+  if (!entry || typeof entry.token !== "string") {
+    return null;
+  }
+  return entry;
 }
 
 export function storeDeviceAuthToken(params: {
@@ -55,19 +59,37 @@ export function storeDeviceAuthToken(params: {
   token: string;
   scopes?: string[];
 }): DeviceAuthEntry {
-  return storeDeviceAuthTokenInStore({
-    adapter: { readStore, writeStore },
+  const role = normalizeDeviceAuthRole(params.role);
+  const next: DeviceAuthStore = {
+    version: 1,
     deviceId: params.deviceId,
-    role: params.role,
+    tokens: {},
+  };
+  const existing = readStore();
+  if (existing && existing.deviceId === params.deviceId) {
+    next.tokens = { ...existing.tokens };
+  }
+  const entry: DeviceAuthEntry = {
     token: params.token,
-    scopes: params.scopes,
-  });
+    role,
+    scopes: normalizeDeviceAuthScopes(params.scopes),
+    updatedAtMs: Date.now(),
+  };
+  next.tokens[role] = entry;
+  writeStore(next);
+  return entry;
 }
 
 export function clearDeviceAuthToken(params: { deviceId: string; role: string }) {
-  clearDeviceAuthTokenFromStore({
-    adapter: { readStore, writeStore },
-    deviceId: params.deviceId,
-    role: params.role,
-  });
+  const store = readStore();
+  if (!store || store.deviceId !== params.deviceId) {
+    return;
+  }
+  const role = normalizeDeviceAuthRole(params.role);
+  if (!store.tokens[role]) {
+    return;
+  }
+  const next = { ...store, tokens: { ...store.tokens } };
+  delete next.tokens[role];
+  writeStore(next);
 }

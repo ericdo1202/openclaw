@@ -336,8 +336,16 @@ final class ControlChannel {
     }
 
     private func startEventStream() {
-        GatewayPushSubscription.restartTask(task: &self.eventTask) { [weak self] push in
-            self?.handle(push: push)
+        self.eventTask?.cancel()
+        self.eventTask = Task { [weak self] in
+            guard let self else { return }
+            let stream = await GatewayConnection.shared.subscribe()
+            for await push in stream {
+                if Task.isCancelled { return }
+                await MainActor.run { [weak self] in
+                    self?.handle(push: push)
+                }
+            }
         }
     }
 

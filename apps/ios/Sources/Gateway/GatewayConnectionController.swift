@@ -9,7 +9,6 @@ import Darwin
 import OpenClawKit
 import Network
 import Observation
-import os
 import Photos
 import ReplayKit
 import Security
@@ -213,7 +212,7 @@ final class GatewayConnectionController {
             await self.connectManual(host: host, port: port, useTLS: useTLS)
         case let .discovered(stableID, _):
             guard let gateway = self.gateways.first(where: { $0.stableID == stableID }) else { return }
-            _ = await self.connectDiscoveredGateway(gateway)
+            await self.connectDiscoveredGateway(gateway)
         }
     }
 
@@ -400,7 +399,7 @@ final class GatewayConnectionController {
             self.didAutoConnect = true
             Task { [weak self] in
                 guard let self else { return }
-                _ = await self.connectDiscoveredGateway(target)
+                await self.connectDiscoveredGateway(target)
             }
             return
         }
@@ -412,7 +411,7 @@ final class GatewayConnectionController {
             self.didAutoConnect = true
             Task { [weak self] in
                 guard let self else { return }
-                _ = await self.connectDiscoveredGateway(gateway)
+                await self.connectDiscoveredGateway(gateway)
             }
             return
         }
@@ -633,8 +632,7 @@ final class GatewayConnectionController {
                             0,
                             NI_NUMERICHOST)
                         guard rc == 0 else { return nil }
-                        let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
-                        return String(bytes: bytes, encoding: .utf8)
+                        return String(cString: buffer)
                     }
 
                     if let host, !host.isEmpty {
@@ -891,9 +889,11 @@ final class GatewayConnectionController {
         permissions["contacts"] = contactsStatus == .authorized || contactsStatus == .limited
 
         let calendarStatus = EKEventStore.authorizationStatus(for: .event)
-        permissions["calendar"] = Self.hasEventKitAccess(calendarStatus)
+        permissions["calendar"] =
+            calendarStatus == .authorized || calendarStatus == .fullAccess || calendarStatus == .writeOnly
         let remindersStatus = EKEventStore.authorizationStatus(for: .reminder)
-        permissions["reminders"] = Self.hasEventKitAccess(remindersStatus)
+        permissions["reminders"] =
+            remindersStatus == .authorized || remindersStatus == .fullAccess || remindersStatus == .writeOnly
 
         let motionStatus = CMMotionActivityManager.authorizationStatus()
         let pedometerStatus = CMPedometer.authorizationStatus()
@@ -911,19 +911,53 @@ final class GatewayConnectionController {
 
     private static func isLocationAuthorized(status: CLAuthorizationStatus) -> Bool {
         switch status {
-        case .authorizedAlways, .authorizedWhenInUse:
+        case .authorizedAlways, .authorizedWhenInUse, .authorized:
             return true
         default:
             return false
         }
     }
 
-    private static func hasEventKitAccess(_ status: EKAuthorizationStatus) -> Bool {
-        status == .fullAccess || status == .writeOnly
-    }
-
     private static func motionAvailable() -> Bool {
         CMMotionActivityManager.isActivityAvailable() || CMPedometer.isStepCountingAvailable()
+    }
+
+    private func platformString() -> String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let name = switch UIDevice.current.userInterfaceIdiom {
+        case .pad:
+            "iPadOS"
+        case .phone:
+            "iOS"
+        default:
+            "iOS"
+        }
+        return "\(name) \(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+    }
+
+    private func deviceFamily() -> String {
+        switch UIDevice.current.userInterfaceIdiom {
+        case .pad:
+            "iPad"
+        case .phone:
+            "iPhone"
+        default:
+            "iOS"
+        }
+    }
+
+    private func modelIdentifier() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machine = withUnsafeBytes(of: &systemInfo.machine) { ptr in
+            String(bytes: ptr.prefix { $0 != 0 }, encoding: .utf8)
+        }
+        let trimmed = machine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "unknown" : trimmed
+    }
+
+    private func appVersion() -> String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 }
 
@@ -946,19 +980,19 @@ extension GatewayConnectionController {
     }
 
     func _test_platformString() -> String {
-        DeviceInfoHelper.platformString()
+        self.platformString()
     }
 
     func _test_deviceFamily() -> String {
-        DeviceInfoHelper.deviceFamily()
+        self.deviceFamily()
     }
 
     func _test_modelIdentifier() -> String {
-        DeviceInfoHelper.modelIdentifier()
+        self.modelIdentifier()
     }
 
     func _test_appVersion() -> String {
-        DeviceInfoHelper.appVersion()
+        self.appVersion()
     }
 
     func _test_setGateways(_ gateways: [GatewayDiscoveryModel.DiscoveredGateway]) {
@@ -990,17 +1024,13 @@ extension GatewayConnectionController {
 }
 #endif
 
-private final class GatewayTLSFingerprintProbe: NSObject, URLSessionDelegate, @unchecked Sendable {
-    private struct ProbeState {
-        var didFinish = false
-        var session: URLSession?
-        var task: URLSessionWebSocketTask?
-    }
-
+private final class GatewayTLSFingerprintProbe: NSObject, URLSessionDelegate {
     private let url: URL
     private let timeoutSeconds: Double
     private let onComplete: (String?) -> Void
-    private let state = OSAllocatedUnfairLock(initialState: ProbeState())
+    private var didFinish = false
+    private var session: URLSession?
+    private var task: URLSessionWebSocketTask?
 
     init(url: URL, timeoutSeconds: Double, onComplete: @escaping (String?) -> Void) {
         self.url = url
@@ -1013,11 +1043,9 @@ private final class GatewayTLSFingerprintProbe: NSObject, URLSessionDelegate, @u
         config.timeoutIntervalForRequest = self.timeoutSeconds
         config.timeoutIntervalForResource = self.timeoutSeconds
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        self.session = session
         let task = session.webSocketTask(with: self.url)
-        self.state.withLock { s in
-            s.session = session
-            s.task = task
-        }
+        self.task = task
         task.resume()
 
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + self.timeoutSeconds) { [weak self] in
@@ -1043,18 +1071,12 @@ private final class GatewayTLSFingerprintProbe: NSObject, URLSessionDelegate, @u
     }
 
     private func finish(_ fingerprint: String?) {
-        let (shouldComplete, taskToCancel, sessionToInvalidate) = self.state.withLock { s -> (Bool, URLSessionWebSocketTask?, URLSession?) in
-            guard !s.didFinish else { return (false, nil, nil) }
-            s.didFinish = true
-            let task = s.task
-            let session = s.session
-            s.task = nil
-            s.session = nil
-            return (true, task, session)
-        }
-        guard shouldComplete else { return }
-        taskToCancel?.cancel(with: .goingAway, reason: nil)
-        sessionToInvalidate?.invalidateAndCancel()
+        objc_sync_enter(self)
+        defer { objc_sync_exit(self) }
+        guard !self.didFinish else { return }
+        self.didFinish = true
+        self.task?.cancel(with: .goingAway, reason: nil)
+        self.session?.invalidateAndCancel()
         self.onComplete(fingerprint)
     }
 

@@ -23,13 +23,11 @@ Purpose: shared onboarding + config surfaces across CLI, macOS app, and Web UI.
 - `wizard.cancel` params: `{ sessionId }`
 - `wizard.status` params: `{ sessionId }`
 - `config.schema` params: `{}`
-- `config.schema.lookup` params: `{ path }`
 
 Responses (shape)
 
 - Wizard: `{ sessionId, done, step?, status?, error? }`
 - Config schema: `{ schema, uiHints, version, generatedAt }`
-- Config schema lookup: `{ path, schema, hint?, hintPath?, children[] }`
 
 ## UI Hints
 

@@ -15,10 +15,7 @@ import { formatError } from "../server-utils.js";
 import { logWs } from "../ws-log.js";
 import { getHealthVersion, incrementPresenceVersion } from "./health-state.js";
 import { broadcastPresenceSnapshot } from "./presence-events.js";
-import {
-  attachGatewayWsMessageHandler,
-  type WsOriginCheckMetrics,
-} from "./ws-connection/message-handler.js";
+import { attachGatewayWsMessageHandler } from "./ws-connection/message-handler.js";
 import type { GatewayWsClient } from "./ws-types.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -58,7 +55,7 @@ const sanitizeLogValue = (value: string | undefined): string | undefined => {
   return truncateUtf16Safe(cleaned, LOG_HEADER_MAX_LEN);
 };
 
-export type GatewayWsSharedHandlerParams = {
+export function attachGatewayWsConnectionHandler(params: {
   wss: WebSocketServer;
   clients: Set<GatewayWsClient>;
   port: number;
@@ -68,13 +65,8 @@ export type GatewayWsSharedHandlerParams = {
   resolvedAuth: ResolvedGatewayAuth;
   /** Optional rate limiter for auth brute-force protection. */
   rateLimiter?: AuthRateLimiter;
-  /** Browser-origin fallback limiter (loopback is never exempt). */
-  browserRateLimiter?: AuthRateLimiter;
   gatewayMethods: string[];
   events: string[];
-};
-
-export type AttachGatewayWsConnectionHandlerParams = GatewayWsSharedHandlerParams & {
   logGateway: SubsystemLogger;
   logHealth: SubsystemLogger;
   logWsControl: SubsystemLogger;
@@ -88,9 +80,7 @@ export type AttachGatewayWsConnectionHandlerParams = GatewayWsSharedHandlerParam
     },
   ) => void;
   buildRequestContext: () => GatewayRequestContext;
-};
-
-export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnectionHandlerParams) {
+}) {
   const {
     wss,
     clients,
@@ -100,7 +90,6 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
     canvasHostServerPort,
     resolvedAuth,
     rateLimiter,
-    browserRateLimiter,
     gatewayMethods,
     events,
     logGateway,
@@ -110,7 +99,6 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
     broadcast,
     buildRequestContext,
   } = params;
-  const originCheckMetrics: WsOriginCheckMetrics = { hostHeaderFallbackAccepted: 0 };
 
   wss.on("connection", (socket, upgradeReq) => {
     let client: GatewayWsClient | null = null;
@@ -290,7 +278,6 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       connectNonce,
       resolvedAuth,
       rateLimiter,
-      browserRateLimiter,
       gatewayMethods,
       events,
       extraHandlers,
@@ -309,7 +296,6 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       },
       setCloseCause,
       setLastFrameMeta,
-      originCheckMetrics,
       logGateway,
       logHealth,
       logWsControl,

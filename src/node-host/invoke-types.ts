@@ -1,5 +1,3 @@
-import type { SkillBinTrustEntry } from "../infra/exec-approvals.js";
-
 export type SystemRunParams = {
   command: string[];
   rawCommand?: string | null;
@@ -36,22 +34,6 @@ export type ExecEventPayload = {
   reason?: string;
 };
 
-export type ExecFinishedResult = {
-  stdout?: string;
-  stderr?: string;
-  error?: string | null;
-  exitCode?: number | null;
-  timedOut?: boolean;
-  success?: boolean;
-};
-
-export type ExecFinishedEventParams = {
-  sessionKey: string;
-  runId: string;
-  cmdText: string;
-  result: ExecFinishedResult;
-};
-
 export type SkillBinsProvider = {
-  current(force?: boolean): Promise<SkillBinTrustEntry[]>;
+  current(force?: boolean): Promise<Set<string>>;
 };

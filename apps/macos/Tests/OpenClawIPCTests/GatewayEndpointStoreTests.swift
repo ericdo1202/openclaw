@@ -3,22 +3,6 @@ import Testing
 @testable import OpenClaw
 
 @Suite struct GatewayEndpointStoreTests {
-    private func makeLaunchAgentSnapshot(
-        env: [String: String],
-        token: String?,
-        password: String?) -> LaunchAgentPlistSnapshot
-    {
-        LaunchAgentPlistSnapshot(
-            programArguments: [],
-            environment: env,
-            stdoutPath: nil,
-            stderrPath: nil,
-            port: nil,
-            bind: nil,
-            token: token,
-            password: password)
-    }
-
     private func makeDefaults() -> UserDefaults {
         let suiteName = "GatewayEndpointStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -27,8 +11,13 @@ import Testing
     }
 
     @Test func resolveGatewayTokenPrefersEnvAndFallsBackToLaunchd() {
-        let snapshot = self.makeLaunchAgentSnapshot(
-            env: ["OPENCLAW_GATEWAY_TOKEN": "launchd-token"],
+        let snapshot = LaunchAgentPlistSnapshot(
+            programArguments: [],
+            environment: ["OPENCLAW_GATEWAY_TOKEN": "launchd-token"],
+            stdoutPath: nil,
+            stderrPath: nil,
+            port: nil,
+            bind: nil,
             token: "launchd-token",
             password: nil)
 
@@ -48,8 +37,13 @@ import Testing
     }
 
     @Test func resolveGatewayTokenIgnoresLaunchdInRemoteMode() {
-        let snapshot = self.makeLaunchAgentSnapshot(
-            env: ["OPENCLAW_GATEWAY_TOKEN": "launchd-token"],
+        let snapshot = LaunchAgentPlistSnapshot(
+            programArguments: [],
+            environment: ["OPENCLAW_GATEWAY_TOKEN": "launchd-token"],
+            stdoutPath: nil,
+            stderrPath: nil,
+            port: nil,
+            bind: nil,
             token: "launchd-token",
             password: nil)
 
@@ -62,8 +56,13 @@ import Testing
     }
 
     @Test func resolveGatewayPasswordFallsBackToLaunchd() {
-        let snapshot = self.makeLaunchAgentSnapshot(
-            env: ["OPENCLAW_GATEWAY_PASSWORD": "launchd-pass"],
+        let snapshot = LaunchAgentPlistSnapshot(
+            programArguments: [],
+            environment: ["OPENCLAW_GATEWAY_PASSWORD": "launchd-pass"],
+            stdoutPath: nil,
+            stderrPath: nil,
+            port: nil,
+            bind: nil,
             token: nil,
             password: "launchd-pass")
 
@@ -178,10 +177,11 @@ import Testing
     }
 
     @Test func dashboardURLUsesLocalBasePathInLocalMode() throws {
-        let config: GatewayConnection.Config = try (
-            url: #require(URL(string: "ws://127.0.0.1:18789")),
+        let config: GatewayConnection.Config = (
+            url: try #require(URL(string: "ws://127.0.0.1:18789")),
             token: nil,
-            password: nil)
+            password: nil
+        )
 
         let url = try GatewayEndpointStore.dashboardURL(
             for: config,
@@ -191,10 +191,11 @@ import Testing
     }
 
     @Test func dashboardURLSkipsLocalBasePathInRemoteMode() throws {
-        let config: GatewayConnection.Config = try (
-            url: #require(URL(string: "ws://gateway.example:18789")),
+        let config: GatewayConnection.Config = (
+            url: try #require(URL(string: "ws://gateway.example:18789")),
             token: nil,
-            password: nil)
+            password: nil
+        )
 
         let url = try GatewayEndpointStore.dashboardURL(
             for: config,
@@ -204,10 +205,11 @@ import Testing
     }
 
     @Test func dashboardURLPrefersPathFromConfigURL() throws {
-        let config: GatewayConnection.Config = try (
-            url: #require(URL(string: "wss://gateway.example:443/remote-ui")),
+        let config: GatewayConnection.Config = (
+            url: try #require(URL(string: "wss://gateway.example:443/remote-ui")),
             token: nil,
-            password: nil)
+            password: nil
+        )
 
         let url = try GatewayEndpointStore.dashboardURL(
             for: config,

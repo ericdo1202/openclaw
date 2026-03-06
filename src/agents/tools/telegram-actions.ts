@@ -1,11 +1,6 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { OpenClawConfig } from "../../config/config.js";
-import { readBooleanParam } from "../../plugin-sdk/boolean-param.js";
-import { resolvePollMaxSelections } from "../../polls.js";
-import {
-  createTelegramActionGate,
-  resolveTelegramPollActionGateState,
-} from "../../telegram/accounts.js";
+import { createTelegramActionGate } from "../../telegram/accounts.js";
 import type { TelegramButtonStyle, TelegramInlineButtons } from "../../telegram/button-types.js";
 import {
   resolveTelegramInlineButtonsScope,
@@ -18,7 +13,6 @@ import {
   editMessageTelegram,
   reactMessageTelegram,
   sendMessageTelegram,
-  sendPollTelegram,
   sendStickerTelegram,
 } from "../../telegram/send.js";
 import { getCacheStats, searchStickers } from "../../telegram/sticker-cache.js";
@@ -27,7 +21,6 @@ import {
   jsonResult,
   readNumberParam,
   readReactionParams,
-  readStringArrayParam,
   readStringOrNumberParam,
   readStringParam,
 } from "./common.js";
@@ -96,79 +89,47 @@ export async function handleTelegramAction(
     mediaLocalRoots?: readonly string[];
   },
 ): Promise<AgentToolResult<unknown>> {
-  const { action, accountId } = {
-    action: readStringParam(params, "action", { required: true }),
-    accountId: readStringParam(params, "accountId"),
-  };
-  const isActionEnabled = createTelegramActionGate({
-    cfg,
-    accountId,
-  });
+  const action = readStringParam(params, "action", { required: true });
+  const accountId = readStringParam(params, "accountId");
+  const isActionEnabled = createTelegramActionGate({ cfg, accountId });
 
   if (action === "react") {
-    // All react failures return soft results (jsonResult with ok:false) instead
-    // of throwing, because hard tool errors can trigger model re-generation
-    // loops and duplicate content.
+    // Check reaction level first
     const reactionLevelInfo = resolveTelegramReactionLevel({
       cfg,
       accountId: accountId ?? undefined,
     });
     if (!reactionLevelInfo.agentReactionsEnabled) {
-      return jsonResult({
-        ok: false,
-        reason: "disabled",
-        hint: `Telegram agent reactions disabled (reactionLevel="${reactionLevelInfo.level}"). Do not retry.`,
-      });
+      throw new Error(
+        `Telegram agent reactions disabled (reactionLevel="${reactionLevelInfo.level}"). ` +
+          `Set channels.telegram.reactionLevel to "minimal" or "extensive" to enable.`,
+      );
     }
+    // Also check the existing action gate for backward compatibility
     if (!isActionEnabled("reactions")) {
-      return jsonResult({
-        ok: false,
-        reason: "disabled",
-        hint: "Telegram reactions are disabled via actions.reactions. Do not retry.",
-      });
+      throw new Error("Telegram reactions are disabled via actions.reactions.");
     }
     const chatId = readStringOrNumberParam(params, "chatId", {
       required: true,
     });
     const messageId = readNumberParam(params, "messageId", {
+      required: true,
       integer: true,
     });
-    if (typeof messageId !== "number" || !Number.isFinite(messageId) || messageId <= 0) {
-      return jsonResult({
-        ok: false,
-        reason: "missing_message_id",
-        hint: "Telegram reaction requires a valid messageId (or inbound context fallback). Do not retry.",
-      });
-    }
     const { emoji, remove, isEmpty } = readReactionParams(params, {
       removeErrorMessage: "Emoji is required to remove a Telegram reaction.",
     });
     const token = resolveTelegramToken(cfg, { accountId }).token;
     if (!token) {
-      return jsonResult({
-        ok: false,
-        reason: "missing_token",
-        hint: "Telegram bot token missing. Do not retry.",
-      });
+      throw new Error(
+        "Telegram bot token missing. Set TELEGRAM_BOT_TOKEN or channels.telegram.botToken.",
+      );
     }
-    let reactionResult: Awaited<ReturnType<typeof reactMessageTelegram>>;
-    try {
-      reactionResult = await reactMessageTelegram(chatId ?? "", messageId ?? 0, emoji ?? "", {
-        token,
-        remove,
-        accountId: accountId ?? undefined,
-      });
-    } catch (err) {
-      const isInvalid = String(err).includes("REACTION_INVALID");
-      return jsonResult({
-        ok: false,
-        reason: isInvalid ? "REACTION_INVALID" : "error",
-        emoji,
-        hint: isInvalid
-          ? "This emoji is not supported for Telegram reactions. Add it to your reaction disallow list so you do not try it again."
-          : "Reaction failed. Do not retry.",
-      });
-    }
+    const reactionResult = await reactMessageTelegram(chatId ?? "", messageId ?? 0, emoji ?? "", {
+      token,
+      remove,
+      accountId: accountId ?? undefined,
+    });
     if (!reactionResult.ok) {
       return jsonResult({
         ok: false,
@@ -245,67 +206,13 @@ export async function handleTelegramAction(
       replyToMessageId: replyToMessageId ?? undefined,
       messageThreadId: messageThreadId ?? undefined,
       quoteText: quoteText ?? undefined,
-      asVoice: readBooleanParam(params, "asVoice"),
-      silent: readBooleanParam(params, "silent"),
+      asVoice: typeof params.asVoice === "boolean" ? params.asVoice : undefined,
+      silent: typeof params.silent === "boolean" ? params.silent : undefined,
     });
     return jsonResult({
       ok: true,
       messageId: result.messageId,
       chatId: result.chatId,
-    });
-  }
-
-  if (action === "poll") {
-    const pollActionState = resolveTelegramPollActionGateState(isActionEnabled);
-    if (!pollActionState.sendMessageEnabled) {
-      throw new Error("Telegram sendMessage is disabled.");
-    }
-    if (!pollActionState.pollEnabled) {
-      throw new Error("Telegram polls are disabled.");
-    }
-    const to = readStringParam(params, "to", { required: true });
-    const question = readStringParam(params, "question", { required: true });
-    const answers = readStringArrayParam(params, "answers", { required: true });
-    const allowMultiselect = readBooleanParam(params, "allowMultiselect") ?? false;
-    const durationSeconds = readNumberParam(params, "durationSeconds", { integer: true });
-    const durationHours = readNumberParam(params, "durationHours", { integer: true });
-    const replyToMessageId = readNumberParam(params, "replyToMessageId", {
-      integer: true,
-    });
-    const messageThreadId = readNumberParam(params, "messageThreadId", {
-      integer: true,
-    });
-    const isAnonymous = readBooleanParam(params, "isAnonymous");
-    const silent = readBooleanParam(params, "silent");
-    const token = resolveTelegramToken(cfg, { accountId }).token;
-    if (!token) {
-      throw new Error(
-        "Telegram bot token missing. Set TELEGRAM_BOT_TOKEN or channels.telegram.botToken.",
-      );
-    }
-    const result = await sendPollTelegram(
-      to,
-      {
-        question,
-        options: answers,
-        maxSelections: resolvePollMaxSelections(answers.length, allowMultiselect),
-        durationSeconds: durationSeconds ?? undefined,
-        durationHours: durationHours ?? undefined,
-      },
-      {
-        token,
-        accountId: accountId ?? undefined,
-        replyToMessageId: replyToMessageId ?? undefined,
-        messageThreadId: messageThreadId ?? undefined,
-        isAnonymous: isAnonymous ?? undefined,
-        silent: silent ?? undefined,
-      },
-    );
-    return jsonResult({
-      ok: true,
-      messageId: result.messageId,
-      chatId: result.chatId,
-      pollId: result.pollId,
     });
   }
 

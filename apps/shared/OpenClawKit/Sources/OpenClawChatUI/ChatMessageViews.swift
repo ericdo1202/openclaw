@@ -70,7 +70,13 @@ private struct ChatBubbleShape: InsettableShape {
             to: baseBottom,
             control1: CGPoint(x: bubbleMaxX + self.tailWidth * 0.95, y: midY + baseH * 0.15),
             control2: CGPoint(x: bubbleMaxX + self.tailWidth * 0.2, y: baseBottomY - baseH * 0.05))
-        self.addBottomEdge(path: &path, bubbleMinX: bubbleMinX, bubbleMaxX: bubbleMaxX, bubbleMaxY: bubbleMaxY, radius: r)
+        path.addQuadCurve(
+            to: CGPoint(x: bubbleMaxX - r, y: bubbleMaxY),
+            control: CGPoint(x: bubbleMaxX, y: bubbleMaxY))
+        path.addLine(to: CGPoint(x: bubbleMinX + r, y: bubbleMaxY))
+        path.addQuadCurve(
+            to: CGPoint(x: bubbleMinX, y: bubbleMaxY - r),
+            control: CGPoint(x: bubbleMinX, y: bubbleMaxY))
         path.addLine(to: CGPoint(x: bubbleMinX, y: bubbleMinY + r))
         path.addQuadCurve(
             to: CGPoint(x: bubbleMinX + r, y: bubbleMinY),
@@ -102,7 +108,13 @@ private struct ChatBubbleShape: InsettableShape {
             to: CGPoint(x: bubbleMaxX, y: bubbleMinY + r),
             control: CGPoint(x: bubbleMaxX, y: bubbleMinY))
         path.addLine(to: CGPoint(x: bubbleMaxX, y: bubbleMaxY - r))
-        self.addBottomEdge(path: &path, bubbleMinX: bubbleMinX, bubbleMaxX: bubbleMaxX, bubbleMaxY: bubbleMaxY, radius: r)
+        path.addQuadCurve(
+            to: CGPoint(x: bubbleMaxX - r, y: bubbleMaxY),
+            control: CGPoint(x: bubbleMaxX, y: bubbleMaxY))
+        path.addLine(to: CGPoint(x: bubbleMinX + r, y: bubbleMaxY))
+        path.addQuadCurve(
+            to: CGPoint(x: bubbleMinX, y: bubbleMaxY - r),
+            control: CGPoint(x: bubbleMinX, y: bubbleMaxY))
         path.addLine(to: baseBottom)
         path.addCurve(
             to: tip,
@@ -118,22 +130,6 @@ private struct ChatBubbleShape: InsettableShape {
             control: CGPoint(x: bubbleMinX, y: bubbleMinY))
 
         return path
-    }
-
-    private func addBottomEdge(
-        path: inout Path,
-        bubbleMinX: CGFloat,
-        bubbleMaxX: CGFloat,
-        bubbleMaxY: CGFloat,
-        radius: CGFloat)
-    {
-        path.addQuadCurve(
-            to: CGPoint(x: bubbleMaxX - radius, y: bubbleMaxY),
-            control: CGPoint(x: bubbleMaxX, y: bubbleMaxY))
-        path.addLine(to: CGPoint(x: bubbleMinX + radius, y: bubbleMaxY))
-        path.addQuadCurve(
-            to: CGPoint(x: bubbleMinX, y: bubbleMaxY - radius),
-            control: CGPoint(x: bubbleMinX, y: bubbleMaxY))
     }
 }
 
@@ -492,20 +488,6 @@ extension ChatTypingIndicatorBubble: @MainActor Equatable {
     }
 }
 
-private extension View {
-    func assistantBubbleContainerStyle() -> some View {
-        self
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(OpenClawChatTheme.assistantBubble))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
-            .frame(maxWidth: ChatUIConstants.bubbleMaxWidth, alignment: .leading)
-            .focusable(false)
-    }
-}
-
 @MainActor
 struct ChatStreamingAssistantBubble: View {
     let text: String
@@ -516,7 +498,14 @@ struct ChatStreamingAssistantBubble: View {
             ChatAssistantTextBody(text: self.text, markdownVariant: self.markdownVariant)
         }
         .padding(12)
-        .assistantBubbleContainerStyle()
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(OpenClawChatTheme.assistantBubble))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .frame(maxWidth: ChatUIConstants.bubbleMaxWidth, alignment: .leading)
+        .focusable(false)
     }
 }
 
@@ -553,7 +542,14 @@ struct ChatPendingToolsBubble: View {
             }
         }
         .padding(12)
-        .assistantBubbleContainerStyle()
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(OpenClawChatTheme.assistantBubble))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .frame(maxWidth: ChatUIConstants.bubbleMaxWidth, alignment: .leading)
+        .focusable(false)
     }
 }
 

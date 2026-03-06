@@ -20,8 +20,6 @@ export type ResolvedBrowserConfig = {
   enabled: boolean;
   evaluateEnabled: boolean;
   controlPort: number;
-  cdpPortRangeStart: number;
-  cdpPortRangeEnd: number;
   cdpProtocol: "http" | "https";
   cdpHost: string;
   cdpIsLoopback: boolean;
@@ -46,7 +44,6 @@ export type ResolvedBrowserProfile = {
   cdpIsLoopback: boolean;
   color: string;
   driver: "openclaw" | "extension";
-  attachOnly: boolean;
 };
 
 function normalizeHexColor(raw: string | undefined) {
@@ -66,27 +63,6 @@ function normalizeTimeoutMs(raw: number | undefined, fallback: number) {
   return value < 0 ? fallback : value;
 }
 
-function resolveCdpPortRangeStart(
-  rawStart: number | undefined,
-  fallbackStart: number,
-  rangeSpan: number,
-) {
-  const start =
-    typeof rawStart === "number" && Number.isFinite(rawStart)
-      ? Math.floor(rawStart)
-      : fallbackStart;
-  if (start < 1 || start > 65535) {
-    throw new Error(`browser.cdpPortRangeStart must be between 1 and 65535, got: ${start}`);
-  }
-  const maxStart = 65535 - rangeSpan;
-  if (start > maxStart) {
-    throw new Error(
-      `browser.cdpPortRangeStart (${start}) is too high for a ${rangeSpan + 1}-port range; max is ${maxStart}.`,
-    );
-  }
-  return start;
-}
-
 function normalizeStringList(raw: string[] | undefined): string[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) {
     return undefined;
@@ -99,28 +75,19 @@ function normalizeStringList(raw: string[] | undefined): string[] | undefined {
 
 function resolveBrowserSsrFPolicy(cfg: BrowserConfig | undefined): SsrFPolicy | undefined {
   const allowPrivateNetwork = cfg?.ssrfPolicy?.allowPrivateNetwork;
-  const dangerouslyAllowPrivateNetwork = cfg?.ssrfPolicy?.dangerouslyAllowPrivateNetwork;
   const allowedHostnames = normalizeStringList(cfg?.ssrfPolicy?.allowedHostnames);
   const hostnameAllowlist = normalizeStringList(cfg?.ssrfPolicy?.hostnameAllowlist);
-  const hasExplicitPrivateSetting =
-    allowPrivateNetwork !== undefined || dangerouslyAllowPrivateNetwork !== undefined;
-  // Browser defaults to trusted-network mode unless explicitly disabled by policy.
-  const resolvedAllowPrivateNetwork =
-    dangerouslyAllowPrivateNetwork === true ||
-    allowPrivateNetwork === true ||
-    !hasExplicitPrivateSetting;
 
   if (
-    !resolvedAllowPrivateNetwork &&
-    !hasExplicitPrivateSetting &&
-    !allowedHostnames &&
-    !hostnameAllowlist
+    allowPrivateNetwork === undefined &&
+    allowedHostnames === undefined &&
+    hostnameAllowlist === undefined
   ) {
     return undefined;
   }
 
   return {
-    ...(resolvedAllowPrivateNetwork ? { dangerouslyAllowPrivateNetwork: true } : {}),
+    ...(allowPrivateNetwork === true ? { allowPrivateNetwork: true } : {}),
     ...(allowedHostnames ? { allowedHostnames } : {}),
     ...(hostnameAllowlist ? { hostnameAllowlist } : {}),
   };
@@ -217,13 +184,6 @@ export function resolveBrowserConfig(
   );
 
   const derivedCdpRange = deriveDefaultBrowserCdpPortRange(controlPort);
-  const cdpRangeSpan = derivedCdpRange.end - derivedCdpRange.start;
-  const cdpPortRangeStart = resolveCdpPortRangeStart(
-    cfg?.cdpPortRangeStart,
-    derivedCdpRange.start,
-    cdpRangeSpan,
-  );
-  const cdpPortRangeEnd = cdpPortRangeStart + cdpRangeSpan;
 
   const rawCdpUrl = (cfg?.cdpUrl ?? "").trim();
   let cdpInfo:
@@ -259,18 +219,15 @@ export function resolveBrowserConfig(
   // Use legacy cdpUrl port for backward compatibility when no profiles configured
   const legacyCdpPort = rawCdpUrl ? cdpInfo.port : undefined;
   const profiles = ensureDefaultChromeExtensionProfile(
-    ensureDefaultProfile(cfg?.profiles, defaultColor, legacyCdpPort, cdpPortRangeStart),
+    ensureDefaultProfile(cfg?.profiles, defaultColor, legacyCdpPort, derivedCdpRange.start),
     controlPort,
   );
   const cdpProtocol = cdpInfo.parsed.protocol === "https:" ? "https" : "http";
-
   const defaultProfile =
     defaultProfileFromConfig ??
     (profiles[DEFAULT_BROWSER_DEFAULT_PROFILE_NAME]
       ? DEFAULT_BROWSER_DEFAULT_PROFILE_NAME
-      : profiles[DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME]
-        ? DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME
-        : "chrome");
+      : DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME);
 
   const extraArgs = Array.isArray(cfg?.extraArgs)
     ? cfg.extraArgs.filter((a): a is string => typeof a === "string" && a.trim().length > 0)
@@ -281,8 +238,6 @@ export function resolveBrowserConfig(
     enabled,
     evaluateEnabled,
     controlPort,
-    cdpPortRangeStart,
-    cdpPortRangeEnd,
     cdpProtocol,
     cdpHost: cdpInfo.parsed.hostname,
     cdpIsLoopback: isLoopbackHost(cdpInfo.parsed.hostname),
@@ -338,7 +293,6 @@ export function resolveProfile(
     cdpIsLoopback: isLoopbackHost(cdpHost),
     color: profile.color,
     driver,
-    attachOnly: profile.attachOnly ?? resolved.attachOnly,
   };
 }
 

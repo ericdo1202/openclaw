@@ -92,6 +92,7 @@ export async function runNonInteractiveOnboardingLocal(params: {
       opts,
       runtime,
       port: gatewayResult.port,
+      gatewayToken: gatewayResult.gatewayToken,
     });
   }
 

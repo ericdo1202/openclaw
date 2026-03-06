@@ -1,6 +1,7 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/zalo";
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk/zalo";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { zaloDock, zaloPlugin } from "./src/channel.js";
+import { handleZaloWebhookRequest } from "./src/monitor.js";
 import { setZaloRuntime } from "./src/runtime.js";
 
 const plugin = {
@@ -11,6 +12,7 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setZaloRuntime(api.runtime);
     api.registerChannel({ plugin: zaloPlugin, dock: zaloDock });
+    api.registerHttpHandler(handleZaloWebhookRequest);
   },
 };
 

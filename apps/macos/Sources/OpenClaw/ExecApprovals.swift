@@ -226,7 +226,6 @@ enum ExecApprovalsStore {
     private static let defaultAsk: ExecAsk = .onMiss
     private static let defaultAskFallback: ExecSecurity = .deny
     private static let defaultAutoAllowSkills = false
-    private static let secureStateDirPermissions = 0o700
 
     static func fileURL() -> URL {
         OpenClawPaths.stateDirURL.appendingPathComponent("exec-approvals.json")
@@ -333,7 +332,6 @@ enum ExecApprovalsStore {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(file)
             let url = self.fileURL()
-            self.ensureSecureStateDirectory()
             try FileManager().createDirectory(
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true)
@@ -345,7 +343,6 @@ enum ExecApprovalsStore {
     }
 
     static func ensureFile() -> ExecApprovalsFile {
-        self.ensureSecureStateDirectory()
         let url = self.fileURL()
         let existed = FileManager().fileExists(atPath: url.path)
         let loaded = self.loadFile()
@@ -442,9 +439,9 @@ enum ExecApprovalsStore {
     static func addAllowlistEntry(agentId: String?, pattern: String) -> ExecAllowlistPatternValidationReason? {
         let normalizedPattern: String
         switch ExecApprovalHelpers.validateAllowlistPattern(pattern) {
-        case let .valid(validPattern):
+        case .valid(let validPattern):
             normalizedPattern = validPattern
-        case let .invalid(reason):
+        case .invalid(let reason):
             return reason
         }
 
@@ -527,22 +524,6 @@ enum ExecApprovalsStore {
         self.saveFile(file)
     }
 
-    private static func ensureSecureStateDirectory() {
-        let url = OpenClawPaths.stateDirURL
-        do {
-            try FileManager().createDirectory(at: url, withIntermediateDirectories: true)
-            try FileManager().setAttributes(
-                [.posixPermissions: self.secureStateDirPermissions],
-                ofItemAtPath: url.path)
-        } catch {
-            let message =
-                "exec approvals state dir permission hardening failed: \(error.localizedDescription)"
-            self.logger
-                .warning(
-                    "\(message, privacy: .public)")
-        }
-    }
-
     private static func generateToken() -> String {
         var bytes = [UInt8](repeating: 0, count: 24)
         let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
@@ -590,7 +571,7 @@ enum ExecApprovalsStore {
 
     private static func normalizedPattern(_ pattern: String?) -> String? {
         switch ExecApprovalHelpers.validateAllowlistPattern(pattern) {
-        case let .valid(normalized):
+        case .valid(let normalized):
             return normalized.lowercased()
         case .invalid(.empty):
             return nil
@@ -606,7 +587,7 @@ enum ExecApprovalsStore {
         let normalizedResolved = trimmedResolved.isEmpty ? nil : trimmedResolved
 
         switch ExecApprovalHelpers.validateAllowlistPattern(trimmedPattern) {
-        case let .valid(pattern):
+        case .valid(let pattern):
             return ExecAllowlistEntry(
                 id: entry.id,
                 pattern: pattern,
@@ -615,7 +596,7 @@ enum ExecApprovalsStore {
                 lastResolvedPath: normalizedResolved)
         case .invalid:
             switch ExecApprovalHelpers.validateAllowlistPattern(trimmedResolved) {
-            case let .valid(migratedPattern):
+            case .valid(let migratedPattern):
                 return ExecAllowlistEntry(
                     id: entry.id,
                     pattern: migratedPattern,
@@ -648,7 +629,7 @@ enum ExecApprovalsStore {
             let normalizedResolvedPath = trimmedResolvedPath.isEmpty ? nil : trimmedResolvedPath
 
             switch ExecApprovalHelpers.validateAllowlistPattern(trimmedPattern) {
-            case let .valid(pattern):
+            case .valid(let pattern):
                 normalized.append(
                     ExecAllowlistEntry(
                         id: migrated.id,
@@ -656,7 +637,7 @@ enum ExecApprovalsStore {
                         lastUsedAt: migrated.lastUsedAt,
                         lastUsedCommand: migrated.lastUsedCommand,
                         lastResolvedPath: normalizedResolvedPath))
-            case let .invalid(reason):
+            case .invalid(let reason):
                 if dropInvalid {
                     rejected.append(
                         ExecAllowlistRejectedEntry(

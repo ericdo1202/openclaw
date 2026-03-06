@@ -12,6 +12,14 @@ struct SessionMenuLabelView: View {
     private let paddingTrailing: CGFloat = 14
     private let barHeight: CGFloat = 6
 
+    private var primaryTextColor: Color {
+        self.isHighlighted ? Color(nsColor: .selectedMenuItemTextColor) : .primary
+    }
+
+    private var secondaryTextColor: Color {
+        self.isHighlighted ? Color(nsColor: .selectedMenuItemTextColor).opacity(0.85) : .secondary
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ContextUsageBar(
@@ -23,7 +31,7 @@ struct SessionMenuLabelView: View {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(self.row.label)
                     .font(.caption.weight(self.row.key == "main" ? .semibold : .regular))
-                    .foregroundStyle(MenuItemHighlightColors.primary(self.isHighlighted))
+                    .foregroundStyle(self.primaryTextColor)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(1)
@@ -32,14 +40,14 @@ struct SessionMenuLabelView: View {
 
                 Text("\(self.row.tokens.contextSummaryShort) · \(self.row.ageText)")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(MenuItemHighlightColors.secondary(self.isHighlighted))
+                    .foregroundStyle(self.secondaryTextColor)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(2)
 
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(MenuItemHighlightColors.secondary(self.isHighlighted))
+                    .foregroundStyle(self.secondaryTextColor)
                     .padding(.leading, 2)
             }
         }

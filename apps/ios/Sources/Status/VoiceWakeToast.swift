@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct VoiceWakeToast: View {
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var command: String
     var brighten: Bool = false
 
@@ -16,7 +18,20 @@ struct VoiceWakeToast: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .statusGlassCard(brighten: self.brighten, verticalPadding: 10)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(
+                            .white.opacity(self.contrast == .increased ? 0.5 : (self.brighten ? 0.24 : 0.18)),
+                            lineWidth: self.contrast == .increased ? 1.0 : 0.5
+                        )
+                }
+                .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
+        }
         .accessibilityLabel("Voice Wake triggered")
         .accessibilityValue("Command: \(self.command)")
     }

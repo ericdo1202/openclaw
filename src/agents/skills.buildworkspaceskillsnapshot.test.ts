@@ -1,71 +1,31 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { withEnv } from "../test-utils/env.js";
-import { createFixtureSuite } from "../test-utils/fixture-suite.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { createTrackedTempDirs } from "../test-utils/tracked-temp-dirs.js";
 import { writeSkill } from "./skills.e2e-test-helpers.js";
 import { buildWorkspaceSkillSnapshot, buildWorkspaceSkillsPrompt } from "./skills.js";
 
-const fixtureSuite = createFixtureSuite("openclaw-skills-snapshot-suite-");
-let truncationWorkspaceTemplateDir = "";
-let nestedRepoTemplateDir = "";
+const tempDirs = createTrackedTempDirs();
 
-beforeAll(async () => {
-  await fixtureSuite.setup();
-  truncationWorkspaceTemplateDir = await fixtureSuite.createCaseDir(
-    "template-truncation-workspace",
-  );
-  for (let i = 0; i < 8; i += 1) {
-    const name = `skill-${String(i).padStart(2, "0")}`;
-    await writeSkill({
-      dir: path.join(truncationWorkspaceTemplateDir, "skills", name),
-      name,
-      description: "x".repeat(800),
-    });
-  }
-
-  nestedRepoTemplateDir = await fixtureSuite.createCaseDir("template-skills-repo");
-  for (let i = 0; i < 8; i += 1) {
-    const name = `repo-skill-${String(i).padStart(2, "0")}`;
-    await writeSkill({
-      dir: path.join(nestedRepoTemplateDir, "skills", name),
-      name,
-      description: `Desc ${i}`,
-    });
-  }
+afterEach(async () => {
+  await tempDirs.cleanup();
 });
-
-afterAll(async () => {
-  await fixtureSuite.cleanup();
-});
-
-function withWorkspaceHome<T>(workspaceDir: string, cb: () => T): T {
-  return withEnv({ HOME: workspaceDir, PATH: "" }, cb);
-}
-
-async function cloneTemplateDir(templateDir: string, prefix: string): Promise<string> {
-  const cloned = await fixtureSuite.createCaseDir(prefix);
-  await fs.cp(templateDir, cloned, { recursive: true });
-  return cloned;
-}
 
 describe("buildWorkspaceSkillSnapshot", () => {
   it("returns an empty snapshot when skills dirs are missing", async () => {
-    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    const workspaceDir = await tempDirs.make("openclaw-");
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, {
-        managedSkillsDir: path.join(workspaceDir, ".managed"),
-        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
-      }),
-    );
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+    });
 
     expect(snapshot.prompt).toBe("");
     expect(snapshot.skills).toEqual([]);
   });
 
   it("omits disable-model-invocation skills from the prompt", async () => {
-    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    const workspaceDir = await tempDirs.make("openclaw-");
     await writeSkill({
       dir: path.join(workspaceDir, "skills", "visible-skill"),
       name: "visible-skill",
@@ -78,12 +38,10 @@ describe("buildWorkspaceSkillSnapshot", () => {
       frontmatterExtra: "disable-model-invocation: true",
     });
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, {
-        managedSkillsDir: path.join(workspaceDir, ".managed"),
-        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
-      }),
-    );
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+    });
 
     expect(snapshot.prompt).toContain("visible-skill");
     expect(snapshot.prompt).not.toContain("hidden-skill");
@@ -94,7 +52,7 @@ describe("buildWorkspaceSkillSnapshot", () => {
   });
 
   it("keeps prompt output aligned with buildWorkspaceSkillsPrompt", async () => {
-    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    const workspaceDir = await tempDirs.make("openclaw-");
     await writeSkill({
       dir: path.join(workspaceDir, "skills", "visible"),
       name: "visible",
@@ -128,68 +86,79 @@ describe("buildWorkspaceSkillSnapshot", () => {
       },
     };
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, opts),
-    );
-    const prompt = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillsPrompt(workspaceDir, opts),
-    );
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, opts);
+    const prompt = buildWorkspaceSkillsPrompt(workspaceDir, opts);
 
     expect(snapshot.prompt).toBe(prompt);
   });
 
   it("truncates the skills prompt when it exceeds the configured char budget", async () => {
-    const workspaceDir = await cloneTemplateDir(truncationWorkspaceTemplateDir, "workspace");
+    const workspaceDir = await tempDirs.make("openclaw-");
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, {
-        config: {
-          skills: {
-            limits: {
-              maxSkillsInPrompt: 100,
-              maxSkillsPromptChars: 500,
-            },
+    // Make a bunch of skills with very long descriptions.
+    for (let i = 0; i < 25; i += 1) {
+      const name = `skill-${String(i).padStart(2, "0")}`;
+      await writeSkill({
+        dir: path.join(workspaceDir, "skills", name),
+        name,
+        description: "x".repeat(5000),
+      });
+    }
+
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+      config: {
+        skills: {
+          limits: {
+            maxSkillsInPrompt: 100,
+            maxSkillsPromptChars: 1500,
           },
         },
-        managedSkillsDir: path.join(workspaceDir, ".managed"),
-        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
-      }),
-    );
+      },
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+    });
 
     expect(snapshot.prompt).toContain("⚠️ Skills truncated");
-    expect(snapshot.prompt.length).toBeLessThan(2000);
+    expect(snapshot.prompt.length).toBeLessThan(5000);
   });
 
   it("limits discovery for nested repo-style skills roots (dir/skills/*)", async () => {
-    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
-    const repoDir = await cloneTemplateDir(nestedRepoTemplateDir, "skills-repo");
+    const workspaceDir = await tempDirs.make("openclaw-");
+    const repoDir = await tempDirs.make("openclaw-skills-repo-");
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, {
-        config: {
-          skills: {
-            load: {
-              extraDirs: [repoDir],
-            },
-            limits: {
-              maxCandidatesPerRoot: 5,
-              maxSkillsLoadedPerSource: 5,
-            },
+    for (let i = 0; i < 20; i += 1) {
+      const name = `repo-skill-${String(i).padStart(2, "0")}`;
+      await writeSkill({
+        dir: path.join(repoDir, "skills", name),
+        name,
+        description: `Desc ${i}`,
+      });
+    }
+
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+      config: {
+        skills: {
+          load: {
+            extraDirs: [repoDir],
+          },
+          limits: {
+            maxCandidatesPerRoot: 5,
+            maxSkillsLoadedPerSource: 5,
           },
         },
-        managedSkillsDir: path.join(workspaceDir, ".managed"),
-        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
-      }),
-    );
+      },
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+    });
 
     // We should only have loaded a small subset.
     expect(snapshot.skills.length).toBeLessThanOrEqual(5);
     expect(snapshot.prompt).toContain("repo-skill-00");
-    expect(snapshot.prompt).not.toContain("repo-skill-07");
+    expect(snapshot.prompt).not.toContain("repo-skill-19");
   });
 
   it("skips skills whose SKILL.md exceeds maxSkillFileBytes", async () => {
-    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+    const workspaceDir = await tempDirs.make("openclaw-");
 
     await writeSkill({
       dir: path.join(workspaceDir, "skills", "small-skill"),
@@ -201,22 +170,20 @@ describe("buildWorkspaceSkillSnapshot", () => {
       dir: path.join(workspaceDir, "skills", "big-skill"),
       name: "big-skill",
       description: "Big",
-      body: "x".repeat(5_000),
+      body: "x".repeat(50_000),
     });
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, {
-        config: {
-          skills: {
-            limits: {
-              maxSkillFileBytes: 1000,
-            },
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+      config: {
+        skills: {
+          limits: {
+            maxSkillFileBytes: 1000,
           },
         },
-        managedSkillsDir: path.join(workspaceDir, ".managed"),
-        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
-      }),
-    );
+      },
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+    });
 
     expect(snapshot.skills.map((s) => s.name)).toContain("small-skill");
     expect(snapshot.skills.map((s) => s.name)).not.toContain("big-skill");
@@ -225,8 +192,8 @@ describe("buildWorkspaceSkillSnapshot", () => {
   });
 
   it("detects nested skills roots beyond the first 25 entries", async () => {
-    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
-    const repoDir = await fixtureSuite.createCaseDir("skills-repo");
+    const workspaceDir = await tempDirs.make("openclaw-");
+    const repoDir = await tempDirs.make("openclaw-skills-repo-");
 
     // Create 30 nested dirs, but only the last one is an actual skill.
     for (let i = 0; i < 30; i += 1) {
@@ -241,55 +208,51 @@ describe("buildWorkspaceSkillSnapshot", () => {
       description: "Nested skill discovered late",
     });
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, {
-        config: {
-          skills: {
-            load: {
-              extraDirs: [repoDir],
-            },
-            limits: {
-              maxCandidatesPerRoot: 30,
-              maxSkillsLoadedPerSource: 30,
-            },
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+      config: {
+        skills: {
+          load: {
+            extraDirs: [repoDir],
+          },
+          limits: {
+            maxCandidatesPerRoot: 30,
+            maxSkillsLoadedPerSource: 30,
           },
         },
-        managedSkillsDir: path.join(workspaceDir, ".managed"),
-        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
-      }),
-    );
+      },
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+    });
 
     expect(snapshot.skills.map((s) => s.name)).toContain("late-skill");
     expect(snapshot.prompt).toContain("late-skill");
   });
 
   it("enforces maxSkillFileBytes for root-level SKILL.md", async () => {
-    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
-    const rootSkillDir = await fixtureSuite.createCaseDir("root-skill");
+    const workspaceDir = await tempDirs.make("openclaw-");
+    const rootSkillDir = await tempDirs.make("openclaw-root-skill-");
 
     await writeSkill({
       dir: rootSkillDir,
       name: "root-big-skill",
       description: "Big",
-      body: "x".repeat(5_000),
+      body: "x".repeat(50_000),
     });
 
-    const snapshot = withWorkspaceHome(workspaceDir, () =>
-      buildWorkspaceSkillSnapshot(workspaceDir, {
-        config: {
-          skills: {
-            load: {
-              extraDirs: [rootSkillDir],
-            },
-            limits: {
-              maxSkillFileBytes: 1000,
-            },
+    const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+      config: {
+        skills: {
+          load: {
+            extraDirs: [rootSkillDir],
+          },
+          limits: {
+            maxSkillFileBytes: 1000,
           },
         },
-        managedSkillsDir: path.join(workspaceDir, ".managed"),
-        bundledSkillsDir: path.join(workspaceDir, ".bundled"),
-      }),
-    );
+      },
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      bundledSkillsDir: path.join(workspaceDir, ".bundled"),
+    });
 
     expect(snapshot.skills.map((s) => s.name)).not.toContain("root-big-skill");
     expect(snapshot.prompt).not.toContain("root-big-skill");

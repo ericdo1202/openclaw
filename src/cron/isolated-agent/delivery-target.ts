@@ -13,28 +13,9 @@ import {
 } from "../../infra/outbound/targets.js";
 import { readChannelAllowFromStoreSync } from "../../pairing/pairing-store.js";
 import { buildChannelAccountBindings } from "../../routing/bindings.js";
-import { normalizeAccountId, normalizeAgentId } from "../../routing/session-key.js";
+import { normalizeAgentId } from "../../routing/session-key.js";
 import { resolveWhatsAppAccount } from "../../web/accounts.js";
 import { normalizeWhatsAppTarget } from "../../whatsapp/normalize.js";
-
-export type DeliveryTargetResolution =
-  | {
-      ok: true;
-      channel: Exclude<OutboundChannel, "none">;
-      to: string;
-      accountId?: string;
-      threadId?: string | number;
-      mode: "explicit" | "implicit";
-    }
-  | {
-      ok: false;
-      channel?: Exclude<OutboundChannel, "none">;
-      to?: string;
-      accountId?: string;
-      threadId?: string | number;
-      mode: "explicit" | "implicit";
-      error: Error;
-    };
 
 export async function resolveDeliveryTarget(
   cfg: OpenClawConfig,
@@ -42,11 +23,16 @@ export async function resolveDeliveryTarget(
   jobPayload: {
     channel?: "last" | ChannelId;
     to?: string;
-    /** Explicit accountId from job.delivery — overrides session-derived and binding-derived values. */
-    accountId?: string;
     sessionKey?: string;
   },
-): Promise<DeliveryTargetResolution> {
+): Promise<{
+  channel?: Exclude<OutboundChannel, "none">;
+  to?: string;
+  accountId?: string;
+  threadId?: string | number;
+  mode: "explicit" | "implicit";
+  error?: Error;
+}> {
   const requestedChannel = typeof jobPayload.channel === "string" ? jobPayload.channel : "last";
   const explicitTo = typeof jobPayload.to === "string" ? jobPayload.to : undefined;
   const allowMismatchedLastTo = requestedChannel === "last";
@@ -102,14 +88,11 @@ export async function resolveDeliveryTarget(
   const mode = resolved.mode as "explicit" | "implicit";
   let toCandidate = resolved.to;
 
-  // Prefer an explicit accountId from the job's delivery config (set via
-  // --account on cron add/edit). Fall back to the session's lastAccountId,
-  // then to the agent's bound account from bindings config.
-  const explicitAccountId =
-    typeof jobPayload.accountId === "string" && jobPayload.accountId.trim()
-      ? jobPayload.accountId.trim()
-      : undefined;
-  let accountId = explicitAccountId ?? resolved.accountId;
+  // When the session has no lastAccountId (e.g. first-run isolated cron
+  // session), fall back to the agent's bound account from bindings config.
+  // This ensures the message tool in isolated sessions resolves the correct
+  // bot token for multi-account setups.
+  let accountId = resolved.accountId;
   if (!accountId && channel) {
     const bindings = buildChannelAccountBindings(cfg);
     const byAgent = bindings.get(channel);
@@ -117,11 +100,6 @@ export async function resolveDeliveryTarget(
     if (boundAccounts && boundAccounts.length > 0) {
       accountId = boundAccounts[0];
     }
-  }
-
-  // job.delivery.accountId takes highest precedence — explicitly set by the job author.
-  if (jobPayload.accountId) {
-    accountId = jobPayload.accountId;
   }
 
   // Carry threadId when it was explicitly set (from :topic: parsing or config)
@@ -136,34 +114,40 @@ export async function resolveDeliveryTarget(
 
   if (!channel) {
     return {
-      ok: false,
       channel: undefined,
       to: undefined,
       accountId,
       threadId,
       mode,
-      error:
-        channelResolutionError ??
-        new Error("Channel is required when delivery.channel=last has no previous channel."),
+      error: channelResolutionError,
+    };
+  }
+
+  if (!toCandidate) {
+    return {
+      channel,
+      to: undefined,
+      accountId,
+      threadId,
+      mode,
+      error: channelResolutionError,
     };
   }
 
   let allowFromOverride: string[] | undefined;
   if (channel === "whatsapp") {
-    const resolvedAccountId = normalizeAccountId(accountId);
-    const configuredAllowFromRaw =
-      resolveWhatsAppAccount({ cfg, accountId: resolvedAccountId }).allowFrom ?? [];
+    const configuredAllowFromRaw = resolveWhatsAppAccount({ cfg, accountId }).allowFrom ?? [];
     const configuredAllowFrom = configuredAllowFromRaw
       .map((entry) => String(entry).trim())
       .filter((entry) => entry && entry !== "*")
       .map((entry) => normalizeWhatsAppTarget(entry))
       .filter((entry): entry is string => Boolean(entry));
-    const storeAllowFrom = readChannelAllowFromStoreSync("whatsapp", process.env, resolvedAccountId)
+    const storeAllowFrom = readChannelAllowFromStoreSync("whatsapp", process.env, accountId)
       .map((entry) => normalizeWhatsAppTarget(entry))
       .filter((entry): entry is string => Boolean(entry));
     allowFromOverride = [...new Set([...configuredAllowFrom, ...storeAllowFrom])];
 
-    if (toCandidate && mode === "implicit" && allowFromOverride.length > 0) {
+    if (mode === "implicit" && allowFromOverride.length > 0) {
       const normalizedCurrentTarget = normalizeWhatsAppTarget(toCandidate);
       if (!normalizedCurrentTarget || !allowFromOverride.includes(normalizedCurrentTarget)) {
         toCandidate = allowFromOverride[0];
@@ -179,23 +163,12 @@ export async function resolveDeliveryTarget(
     mode,
     allowFrom: allowFromOverride,
   });
-  if (!docked.ok) {
-    return {
-      ok: false,
-      channel,
-      to: undefined,
-      accountId,
-      threadId,
-      mode,
-      error: docked.error,
-    };
-  }
   return {
-    ok: true,
     channel,
-    to: docked.to,
+    to: docked.ok ? docked.to : undefined,
     accountId,
     threadId,
     mode,
+    error: docked.ok ? channelResolutionError : docked.error,
   };
 }

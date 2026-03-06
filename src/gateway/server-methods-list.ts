@@ -3,7 +3,6 @@ import { GATEWAY_EVENT_UPDATE_AVAILABLE } from "./events.js";
 
 const BASE_METHODS = [
   "health",
-  "doctor.memory.status",
   "logs.tail",
   "channels.status",
   "channels.logout",
@@ -21,7 +20,6 @@ const BASE_METHODS = [
   "config.apply",
   "config.patch",
   "config.schema",
-  "config.schema.lookup",
   "exec.approvals.get",
   "exec.approvals.set",
   "exec.approvals.node.get",
@@ -51,8 +49,6 @@ const BASE_METHODS = [
   "update.run",
   "voicewake.get",
   "voicewake.set",
-  "secrets.reload",
-  "secrets.resolve",
   "sessions.list",
   "sessions.preview",
   "sessions.patch",
@@ -79,7 +75,6 @@ const BASE_METHODS = [
   "node.invoke",
   "node.invoke.result",
   "node.event",
-  "node.canvas.capability.refresh",
   "cron.list",
   "cron.status",
   "cron.add",

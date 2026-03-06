@@ -137,7 +137,7 @@
     },
     {
       "source": "/providers/grammy",
-      "destination": "/channels/telegram"
+      "destination": "/channels/grammy"
     },
     {
       "source": "/providers/imessage",
@@ -365,11 +365,7 @@
     },
     {
       "source": "/grammy",
-      "destination": "/channels/telegram"
-    },
-    {
-      "source": "/channels/grammy",
-      "destination": "/channels/telegram"
+      "destination": "/channels/grammy"
     },
     {
       "source": "/group-messages",
@@ -597,7 +593,7 @@
     },
     {
       "source": "/sessions",
-      "destination": "/concepts/session"
+      "destination": "/concepts/sessions"
     },
     {
       "source": "/setup",
@@ -839,11 +835,7 @@
               },
               {
                 "group": "Guides",
-                "pages": [
-                  "start/openclaw",
-                  "start/wizard-cli-reference",
-                  "start/wizard-cli-automation"
-                ]
+                "pages": ["start/openclaw"]
               }
             ]
           },
@@ -871,7 +863,6 @@
               {
                 "group": "Hosting and deployment",
                 "pages": [
-                  "vps",
                   "install/fly",
                   "install/hetzner",
                   "install/gcp",
@@ -898,25 +889,25 @@
               {
                 "group": "Messaging platforms",
                 "pages": [
-                  "channels/bluebubbles",
+                  "channels/whatsapp",
+                  "channels/telegram",
                   "channels/discord",
+                  "channels/irc",
+                  "channels/slack",
                   "channels/feishu",
                   "channels/googlechat",
+                  "channels/mattermost",
+                  "channels/signal",
                   "channels/imessage",
-                  "channels/irc",
+                  "channels/bluebubbles",
+                  "channels/msteams",
+                  "channels/synology-chat",
                   "channels/line",
                   "channels/matrix",
-                  "channels/mattermost",
-                  "channels/msteams",
                   "channels/nextcloud-talk",
                   "channels/nostr",
-                  "channels/signal",
-                  "channels/synology-chat",
-                  "channels/slack",
-                  "channels/telegram",
                   "channels/tlon",
                   "channels/twitch",
-                  "channels/whatsapp",
                   "channels/zalo",
                   "channels/zalouser"
                 ]
@@ -941,7 +932,6 @@
               {
                 "group": "Fundamentals",
                 "pages": [
-                  "pi",
                   "concepts/architecture",
                   "concepts/agent",
                   "concepts/agent-loop",
@@ -959,6 +949,7 @@
                 "group": "Sessions and memory",
                 "pages": [
                   "concepts/session",
+                  "concepts/sessions",
                   "concepts/session-pruning",
                   "concepts/session-tool",
                   "concepts/memory",
@@ -990,21 +981,14 @@
               {
                 "group": "Built-in tools",
                 "pages": [
-                  "tools/apply-patch",
-                  "brave-search",
-                  "perplexity",
-                  "tools/diffs",
-                  "tools/pdf",
-                  "tools/elevated",
-                  "tools/exec",
-                  "tools/exec-approvals",
-                  "tools/firecrawl",
-                  "tools/llm-task",
                   "tools/lobster",
-                  "tools/loop-detection",
-                  "tools/reactions",
+                  "tools/llm-task",
+                  "tools/exec",
+                  "tools/web",
+                  "tools/apply-patch",
+                  "tools/elevated",
                   "tools/thinking",
-                  "tools/web"
+                  "tools/reactions"
                 ]
               },
               {
@@ -1018,17 +1002,11 @@
               },
               {
                 "group": "Agent coordination",
-                "pages": [
-                  "tools/agent-send",
-                  "tools/subagents",
-                  "tools/acp-agents",
-                  "tools/multi-agent-sandbox-tools"
-                ]
+                "pages": ["tools/agent-send", "tools/subagents", "tools/multi-agent-sandbox-tools"]
               },
               {
                 "group": "Skills",
                 "pages": [
-                  "tools/creating-skills",
                   "tools/slash-commands",
                   "tools/skills",
                   "tools/skills-config",
@@ -1038,14 +1016,7 @@
               },
               {
                 "group": "Extensions",
-                "pages": [
-                  "plugins/community",
-                  "plugins/voice-call",
-                  "plugins/zalouser",
-                  "plugins/manifest",
-                  "plugins/agent-tools",
-                  "prose"
-                ]
+                "pages": ["plugins/community", "plugins/voice-call", "plugins/zalouser"]
               },
               {
                 "group": "Automation",
@@ -1065,14 +1036,12 @@
                 "pages": [
                   "nodes/index",
                   "nodes/troubleshooting",
-                  "nodes/media-understanding",
                   "nodes/images",
                   "nodes/audio",
                   "nodes/camera",
                   "nodes/talk",
                   "nodes/voicewake",
-                  "nodes/location-command",
-                  "tts"
+                  "nodes/location-command"
                 ]
               }
             ]
@@ -1096,32 +1065,19 @@
                 "group": "Providers",
                 "pages": [
                   "providers/anthropic",
-                  "providers/bedrock",
-                  "providers/cloudflare-ai-gateway",
-                  "providers/claude-max-api-proxy",
-                  "providers/deepgram",
-                  "providers/github-copilot",
-                  "providers/huggingface",
-                  "providers/kilocode",
+                  "providers/openai",
+                  "providers/openrouter",
                   "providers/litellm",
-                  "providers/glm",
-                  "providers/minimax",
+                  "providers/bedrock",
+                  "providers/vercel-ai-gateway",
                   "providers/moonshot",
                   "providers/mistral",
-                  "providers/nvidia",
-                  "providers/ollama",
-                  "providers/openai",
+                  "providers/minimax",
                   "providers/opencode",
-                  "providers/openrouter",
-                  "providers/qianfan",
-                  "providers/qwen",
+                  "providers/glm",
+                  "providers/zai",
                   "providers/synthetic",
-                  "providers/together",
-                  "providers/vercel-ai-gateway",
-                  "providers/venice",
-                  "providers/vllm",
-                  "providers/xiaomi",
-                  "providers/zai"
+                  "providers/qianfan"
                 ]
               }
             ]
@@ -1137,10 +1093,7 @@
                   "platforms/linux",
                   "platforms/windows",
                   "platforms/android",
-                  "platforms/ios",
-                  "platforms/digitalocean",
-                  "platforms/oracle",
-                  "platforms/raspberry-pi"
+                  "platforms/ios"
                 ]
               },
               {
@@ -1182,9 +1135,6 @@
                       "gateway/configuration-reference",
                       "gateway/configuration-examples",
                       "gateway/authentication",
-                      "auth-credential-semantics",
-                      "gateway/secrets",
-                      "gateway/secrets-plan-contract",
                       "gateway/trusted-proxy-auth",
                       "gateway/health",
                       "gateway/heartbeat",
@@ -1210,7 +1160,6 @@
                       "gateway/protocol",
                       "gateway/bridge-protocol",
                       "gateway/openai-http-api",
-                      "gateway/openresponses-http-api",
                       "gateway/tools-invoke-http-api",
                       "gateway/cli-backends",
                       "gateway/local-models"
@@ -1233,12 +1182,7 @@
               },
               {
                 "group": "Security",
-                "pages": [
-                  "security/formal-verification",
-                  "security/README",
-                  "security/THREAT-MODEL-ATLAS",
-                  "security/CONTRIBUTING-THREAT-MODEL"
-                ]
+                "pages": ["security/formal-verification"]
               },
               {
                 "group": "Web interfaces",
@@ -1286,7 +1230,6 @@
                   "cli/qr",
                   "cli/reset",
                   "cli/sandbox",
-                  "cli/secrets",
                   "cli/security",
                   "cli/sessions",
                   "cli/setup",
@@ -1320,15 +1263,7 @@
               },
               {
                 "group": "Technical reference",
-                "pages": [
-                  "reference/wizard",
-                  "reference/token-use",
-                  "reference/secretref-credential-surface",
-                  "reference/prompt-caching",
-                  "reference/api-usage-costs",
-                  "reference/transcript-hygiene",
-                  "date-time"
-                ]
+                "pages": ["reference/wizard", "reference/token-use", "channels/grammy"]
               },
               {
                 "group": "Concept internals",
@@ -1351,14 +1286,7 @@
               {
                 "group": "Experiments",
                 "pages": [
-                  "design/kilo-gateway-integration",
                   "experiments/onboarding-config-protocol",
-                  "experiments/plans/acp-thread-bound-agents",
-                  "experiments/plans/acp-unified-streaming-refactor",
-                  "experiments/plans/browser-evaluate-cdp-refactor",
-                  "experiments/plans/openresponses-gateway",
-                  "experiments/plans/pty-process-supervision",
-                  "experiments/plans/session-binding-channel-agnostic",
                   "experiments/research/memory",
                   "experiments/proposals/model-config"
                 ]
@@ -1378,14 +1306,7 @@
               },
               {
                 "group": "Environment and debugging",
-                "pages": [
-                  "help/environment",
-                  "help/debugging",
-                  "help/testing",
-                  "help/scripts",
-                  "debug/node-issue",
-                  "diagnostics/flags"
-                ]
+                "pages": ["help/environment", "help/debugging", "help/testing", "help/scripts"]
               },
               {
                 "group": "Node runtime",
@@ -1397,7 +1318,7 @@
               },
               {
                 "group": "Developer setup",
-                "pages": ["start/setup", "pi-dev"]
+                "pages": ["start/setup"]
               },
               {
                 "group": "Contributing",
@@ -1470,7 +1391,6 @@
               {
                 "group": "托管与部署",
                 "pages": [
-                  "zh-CN/vps",
                   "zh-CN/install/fly",
                   "zh-CN/install/hetzner",
                   "zh-CN/install/gcp",
@@ -1497,24 +1417,18 @@
               {
                 "group": "消息平台",
                 "pages": [
-                  "zh-CN/channels/bluebubbles",
+                  "zh-CN/channels/whatsapp",
+                  "zh-CN/channels/telegram",
                   "zh-CN/channels/discord",
+                  "zh-CN/channels/slack",
                   "zh-CN/channels/feishu",
-                  "zh-CN/channels/grammy",
                   "zh-CN/channels/googlechat",
+                  "zh-CN/channels/mattermost",
+                  "zh-CN/channels/signal",
                   "zh-CN/channels/imessage",
+                  "zh-CN/channels/msteams",
                   "zh-CN/channels/line",
                   "zh-CN/channels/matrix",
-                  "zh-CN/channels/mattermost",
-                  "zh-CN/channels/msteams",
-                  "zh-CN/channels/nextcloud-talk",
-                  "zh-CN/channels/nostr",
-                  "zh-CN/channels/signal",
-                  "zh-CN/channels/slack",
-                  "zh-CN/channels/telegram",
-                  "zh-CN/channels/tlon",
-                  "zh-CN/channels/twitch",
-                  "zh-CN/channels/whatsapp",
                   "zh-CN/channels/zalo",
                   "zh-CN/channels/zalouser"
                 ]
@@ -1539,7 +1453,6 @@
               {
                 "group": "基础",
                 "pages": [
-                  "zh-CN/pi",
                   "zh-CN/concepts/architecture",
                   "zh-CN/concepts/agent",
                   "zh-CN/concepts/agent-loop",
@@ -1557,6 +1470,7 @@
                 "group": "会话与记忆",
                 "pages": [
                   "zh-CN/concepts/session",
+                  "zh-CN/concepts/sessions",
                   "zh-CN/concepts/session-pruning",
                   "zh-CN/concepts/session-tool",
                   "zh-CN/concepts/memory",
@@ -1588,19 +1502,14 @@
               {
                 "group": "内置工具",
                 "pages": [
-                  "zh-CN/tools/apply-patch",
-                  "zh-CN/brave-search",
-                  "zh-CN/perplexity",
-                  "zh-CN/tools/diffs",
-                  "zh-CN/tools/elevated",
-                  "zh-CN/tools/exec",
-                  "zh-CN/tools/exec-approvals",
-                  "zh-CN/tools/firecrawl",
-                  "zh-CN/tools/llm-task",
                   "zh-CN/tools/lobster",
-                  "zh-CN/tools/reactions",
+                  "zh-CN/tools/llm-task",
+                  "zh-CN/tools/exec",
+                  "zh-CN/tools/web",
+                  "zh-CN/tools/apply-patch",
+                  "zh-CN/tools/elevated",
                   "zh-CN/tools/thinking",
-                  "zh-CN/tools/web"
+                  "zh-CN/tools/reactions"
                 ]
               },
               {
@@ -1623,7 +1532,6 @@
               {
                 "group": "技能",
                 "pages": [
-                  "zh-CN/tools/creating-skills",
                   "zh-CN/tools/slash-commands",
                   "zh-CN/tools/skills",
                   "zh-CN/tools/skills-config",
@@ -1633,13 +1541,7 @@
               },
               {
                 "group": "扩展",
-                "pages": [
-                  "zh-CN/plugins/voice-call",
-                  "zh-CN/plugins/zalouser",
-                  "zh-CN/plugins/manifest",
-                  "zh-CN/plugins/agent-tools",
-                  "zh-CN/prose"
-                ]
+                "pages": ["zh-CN/plugins/voice-call", "zh-CN/plugins/zalouser"]
               },
               {
                 "group": "自动化",
@@ -1659,14 +1561,12 @@
                 "pages": [
                   "zh-CN/nodes/index",
                   "zh-CN/nodes/troubleshooting",
-                  "zh-CN/nodes/media-understanding",
                   "zh-CN/nodes/images",
                   "zh-CN/nodes/audio",
                   "zh-CN/nodes/camera",
                   "zh-CN/nodes/talk",
                   "zh-CN/nodes/voicewake",
-                  "zh-CN/nodes/location-command",
-                  "zh-CN/tts"
+                  "zh-CN/nodes/location-command"
                 ]
               }
             ]
@@ -1690,24 +1590,17 @@
                 "group": "提供商",
                 "pages": [
                   "zh-CN/providers/anthropic",
+                  "zh-CN/providers/openai",
+                  "zh-CN/providers/openrouter",
                   "zh-CN/providers/bedrock",
-                  "zh-CN/providers/claude-max-api-proxy",
-                  "zh-CN/providers/deepgram",
-                  "zh-CN/providers/github-copilot",
-                  "zh-CN/providers/glm",
+                  "zh-CN/providers/vercel-ai-gateway",
                   "zh-CN/providers/moonshot",
                   "zh-CN/providers/minimax",
                   "zh-CN/providers/opencode",
-                  "zh-CN/providers/ollama",
-                  "zh-CN/providers/openai",
-                  "zh-CN/providers/openrouter",
-                  "zh-CN/providers/qianfan",
-                  "zh-CN/providers/qwen",
+                  "zh-CN/providers/glm",
+                  "zh-CN/providers/zai",
                   "zh-CN/providers/synthetic",
-                  "zh-CN/providers/venice",
-                  "zh-CN/providers/vercel-ai-gateway",
-                  "zh-CN/providers/xiaomi",
-                  "zh-CN/providers/zai"
+                  "zh-CN/providers/qianfan"
                 ]
               }
             ]
@@ -1723,10 +1616,7 @@
                   "zh-CN/platforms/linux",
                   "zh-CN/platforms/windows",
                   "zh-CN/platforms/android",
-                  "zh-CN/platforms/ios",
-                  "zh-CN/platforms/digitalocean",
-                  "zh-CN/platforms/oracle",
-                  "zh-CN/platforms/raspberry-pi"
+                  "zh-CN/platforms/ios"
                 ]
               },
               {
@@ -1791,7 +1681,6 @@
                       "zh-CN/gateway/protocol",
                       "zh-CN/gateway/bridge-protocol",
                       "zh-CN/gateway/openai-http-api",
-                      "zh-CN/gateway/openresponses-http-api",
                       "zh-CN/gateway/tools-invoke-http-api",
                       "zh-CN/gateway/cli-backends",
                       "zh-CN/gateway/local-models"
@@ -1817,10 +1706,6 @@
                 ]
               },
               {
-                "group": "运维专题",
-                "pages": ["zh-CN/network", "zh-CN/logging"]
-              },
-              {
                 "group": "安全",
                 "pages": ["zh-CN/security/formal-verification"]
               },
@@ -1843,17 +1728,14 @@
                 "group": "CLI 命令",
                 "pages": [
                   "zh-CN/cli/index",
-                  "zh-CN/cli/acp",
                   "zh-CN/cli/agent",
                   "zh-CN/cli/agents",
                   "zh-CN/cli/approvals",
                   "zh-CN/cli/browser",
                   "zh-CN/cli/channels",
-                  "zh-CN/cli/config",
                   "zh-CN/cli/configure",
                   "zh-CN/cli/cron",
                   "zh-CN/cli/dashboard",
-                  "zh-CN/cli/devices",
                   "zh-CN/cli/directory",
                   "zh-CN/cli/dns",
                   "zh-CN/cli/docs",
@@ -1865,7 +1747,6 @@
                   "zh-CN/cli/memory",
                   "zh-CN/cli/message",
                   "zh-CN/cli/models",
-                  "zh-CN/cli/node",
                   "zh-CN/cli/nodes",
                   "zh-CN/cli/onboard",
                   "zh-CN/cli/pairing",
@@ -1881,8 +1762,7 @@
                   "zh-CN/cli/tui",
                   "zh-CN/cli/uninstall",
                   "zh-CN/cli/update",
-                  "zh-CN/cli/voicecall",
-                  "zh-CN/cli/webhooks"
+                  "zh-CN/cli/voicecall"
                 ]
               },
               {
@@ -1905,13 +1785,7 @@
               },
               {
                 "group": "技术参考",
-                "pages": [
-                  "zh-CN/reference/wizard",
-                  "zh-CN/reference/token-use",
-                  "zh-CN/reference/api-usage-costs",
-                  "zh-CN/reference/transcript-hygiene",
-                  "zh-CN/date-time"
-                ]
+                "pages": ["zh-CN/reference/wizard", "zh-CN/reference/token-use"]
               },
               {
                 "group": "概念内部机制",
@@ -1935,21 +1809,10 @@
                 "group": "实验性功能",
                 "pages": [
                   "zh-CN/experiments/onboarding-config-protocol",
-                  "zh-CN/experiments/plans/openresponses-gateway",
                   "zh-CN/experiments/plans/cron-add-hardening",
                   "zh-CN/experiments/plans/group-policy-hardening",
                   "zh-CN/experiments/research/memory",
                   "zh-CN/experiments/proposals/model-config"
-                ]
-              },
-              {
-                "group": "重构方案",
-                "pages": [
-                  "zh-CN/refactor/clawnet",
-                  "zh-CN/refactor/exec-host",
-                  "zh-CN/refactor/outbound-session-mirroring",
-                  "zh-CN/refactor/plugin-sdk",
-                  "zh-CN/refactor/strict-config"
                 ]
               }
             ]
@@ -1971,9 +1834,7 @@
                   "zh-CN/help/environment",
                   "zh-CN/help/debugging",
                   "zh-CN/help/testing",
-                  "zh-CN/help/scripts",
-                  "zh-CN/debug/node-issue",
-                  "zh-CN/diagnostics/flags"
+                  "zh-CN/help/scripts"
                 ]
               },
               {
@@ -1986,11 +1847,11 @@
               },
               {
                 "group": "开发者设置",
-                "pages": ["zh-CN/start/setup", "zh-CN/pi-dev"]
+                "pages": ["zh-CN/start/setup"]
               },
               {
                 "group": "文档元信息",
-                "pages": ["zh-CN/start/hubs", "zh-CN/start/docs-directory", "zh-CN/AGENTS"]
+                "pages": ["zh-CN/start/hubs", "zh-CN/start/docs-directory"]
               }
             ]
           }

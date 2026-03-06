@@ -20,11 +20,10 @@ enum WatchMessagingError: LocalizedError {
     }
 }
 
-@MainActor
-final class WatchMessagingService: NSObject, @preconcurrency WatchMessagingServicing {
-    nonisolated private static let logger = Logger(subsystem: "ai.openclaw", category: "watch.messaging")
+final class WatchMessagingService: NSObject, WatchMessagingServicing, @unchecked Sendable {
+    private static let logger = Logger(subsystem: "ai.openclaw", category: "watch.messaging")
     private let session: WCSession?
-    private var pendingActivationContinuations: [CheckedContinuation<Void, Never>] = []
+    private let replyHandlerLock = NSLock()
     private var replyHandler: (@Sendable (WatchQuickReplyEvent) -> Void)?
 
     override init() {
@@ -40,11 +39,11 @@ final class WatchMessagingService: NSObject, @preconcurrency WatchMessagingServi
         }
     }
 
-    nonisolated static func isSupportedOnDevice() -> Bool {
+    static func isSupportedOnDevice() -> Bool {
         WCSession.isSupported()
     }
 
-    nonisolated static func currentStatusSnapshot() -> WatchMessagingStatus {
+    static func currentStatusSnapshot() -> WatchMessagingStatus {
         guard WCSession.isSupported() else {
             return WatchMessagingStatus(
                 supported: false,
@@ -71,7 +70,9 @@ final class WatchMessagingService: NSObject, @preconcurrency WatchMessagingServi
     }
 
     func setReplyHandler(_ handler: (@Sendable (WatchQuickReplyEvent) -> Void)?) {
+        self.replyHandlerLock.lock()
         self.replyHandler = handler
+        self.replyHandlerLock.unlock()
     }
 
     func sendNotification(
@@ -147,28 +148,28 @@ final class WatchMessagingService: NSObject, @preconcurrency WatchMessagingServi
 
     private func sendReachableMessage(_ payload: [String: Any], with session: WCSession) async throws {
         try await withCheckedThrowingContinuation { continuation in
-            session.sendMessage(
-                payload,
-                replyHandler: { _ in
-                    continuation.resume()
-                },
-                errorHandler: { error in
-                    continuation.resume(throwing: error)
-                }
-            )
+            session.sendMessage(payload, replyHandler: { _ in
+                continuation.resume()
+            }, errorHandler: { error in
+                continuation.resume(throwing: error)
+            })
         }
     }
 
     private func emitReply(_ event: WatchQuickReplyEvent) {
-        self.replyHandler?(event)
+        let handler: ((WatchQuickReplyEvent) -> Void)?
+        self.replyHandlerLock.lock()
+        handler = self.replyHandler
+        self.replyHandlerLock.unlock()
+        handler?(event)
     }
 
-    nonisolated private static func nonEmpty(_ value: String?) -> String? {
+    private static func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    nonisolated private static func parseQuickReplyPayload(
+    private static func parseQuickReplyPayload(
         _ payload: [String: Any],
         transport: String) -> WatchQuickReplyEvent?
     {
@@ -200,12 +201,13 @@ final class WatchMessagingService: NSObject, @preconcurrency WatchMessagingServi
         guard let session = self.session else { return }
         if session.activationState == .activated { return }
         session.activate()
-        await withCheckedContinuation { continuation in
-            self.pendingActivationContinuations.append(continuation)
+        for _ in 0..<8 {
+            if session.activationState == .activated { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 
-    nonisolated private static func status(for session: WCSession) -> WatchMessagingStatus {
+    private static func status(for session: WCSession) -> WatchMessagingStatus {
         WatchMessagingStatus(
             supported: true,
             paired: session.isPaired,
@@ -214,7 +216,7 @@ final class WatchMessagingService: NSObject, @preconcurrency WatchMessagingServi
             activationState: activationStateLabel(session.activationState))
     }
 
-    nonisolated private static func activationStateLabel(_ state: WCSessionActivationState) -> String {
+    private static func activationStateLabel(_ state: WCSessionActivationState) -> String {
         switch state {
         case .notActivated:
             "notActivated"
@@ -229,42 +231,32 @@ final class WatchMessagingService: NSObject, @preconcurrency WatchMessagingServi
 }
 
 extension WatchMessagingService: WCSessionDelegate {
-    nonisolated func session(
+    func session(
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: (any Error)?)
     {
         if let error {
             Self.logger.error("watch activation failed: \(error.localizedDescription, privacy: .public)")
-        } else {
-            Self.logger.debug("watch activation state=\(Self.activationStateLabel(activationState), privacy: .public)")
+            return
         }
-        // Always resume all waiters so callers never hang, even on error.
-        Task { @MainActor in
-            let waiters = self.pendingActivationContinuations
-            self.pendingActivationContinuations.removeAll()
-            for continuation in waiters {
-                continuation.resume()
-            }
-        }
+        Self.logger.debug("watch activation state=\(Self.activationStateLabel(activationState), privacy: .public)")
     }
 
-    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+    func sessionDidBecomeInactive(_ session: WCSession) {}
 
-    nonisolated func sessionDidDeactivate(_ session: WCSession) {
+    func sessionDidDeactivate(_ session: WCSession) {
         session.activate()
     }
 
-    nonisolated func session(_: WCSession, didReceiveMessage message: [String: Any]) {
+    func session(_: WCSession, didReceiveMessage message: [String: Any]) {
         guard let event = Self.parseQuickReplyPayload(message, transport: "sendMessage") else {
             return
         }
-        Task { @MainActor in
-            self.emitReply(event)
-        }
+        self.emitReply(event)
     }
 
-    nonisolated func session(
+    func session(
         _: WCSession,
         didReceiveMessage message: [String: Any],
         replyHandler: @escaping ([String: Any]) -> Void)
@@ -274,19 +266,15 @@ extension WatchMessagingService: WCSessionDelegate {
             return
         }
         replyHandler(["ok": true])
-        Task { @MainActor in
-            self.emitReply(event)
-        }
+        self.emitReply(event)
     }
 
-    nonisolated func session(_: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+    func session(_: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
         guard let event = Self.parseQuickReplyPayload(userInfo, transport: "transferUserInfo") else {
             return
         }
-        Task { @MainActor in
-            self.emitReply(event)
-        }
+        self.emitReply(event)
     }
 
-    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {}
+    func sessionReachabilityDidChange(_ session: WCSession) {}
 }

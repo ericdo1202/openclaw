@@ -15,9 +15,8 @@ import { createTelegramRetryRunner } from "../infra/retry-policy.js";
 import type { RetryConfig } from "../infra/retry.js";
 import { redactSensitiveText } from "../logging/redact.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
-import type { MediaKind } from "../media/constants.js";
-import { buildOutboundMediaLoadOptions } from "../media/load-options.js";
-import { isGifMedia, kindFromMime } from "../media/mime.js";
+import { mediaKindFromMime } from "../media/constants.js";
+import { isGifMedia } from "../media/mime.js";
 import { normalizePollInput, type PollInput } from "../polls.js";
 import { loadWebMedia } from "../web/media.js";
 import { type ResolvedTelegramAccount, resolveTelegramAccount } from "./accounts.js";
@@ -42,7 +41,6 @@ type TelegramApi = Bot["api"];
 type TelegramApiOverride = Partial<TelegramApi>;
 
 type TelegramSendOpts = {
-  cfg?: ReturnType<typeof loadConfig>;
   token?: string;
   accountId?: string;
   verbose?: boolean;
@@ -87,16 +85,6 @@ type TelegramReactionOpts = {
   verbose?: boolean;
   retry?: RetryConfig;
 };
-
-function resolveTelegramMessageIdOrThrow(
-  result: TelegramMessageLike | null | undefined,
-  context: string,
-): number {
-  if (typeof result?.message_id === "number" && Number.isFinite(result.message_id)) {
-    return Math.trunc(result.message_id);
-  }
-  throw new Error(`Telegram ${context} returned no message_id`);
-}
 
 const PARSE_ERR_RE = /can't parse entities|parse entities|find end of the entity/i;
 const THREAD_NOT_FOUND_RE = /400:\s*Bad Request:\s*message thread not found/i;
@@ -560,14 +548,11 @@ export async function sendMessageTelegram(
   };
 
   if (mediaUrl) {
-    const media = await loadWebMedia(
-      mediaUrl,
-      buildOutboundMediaLoadOptions({
-        maxBytes: opts.maxBytes,
-        mediaLocalRoots: opts.mediaLocalRoots,
-      }),
-    );
-    const kind = kindFromMime(media.contentType ?? undefined);
+    const media = await loadWebMedia(mediaUrl, {
+      maxBytes: opts.maxBytes,
+      localRoots: opts.mediaLocalRoots,
+    });
+    const kind = mediaKindFromMime(media.contentType ?? undefined);
     const isGif = isGifMedia({
       contentType: media.contentType,
       fileName: media.fileName,
@@ -700,9 +685,11 @@ export async function sendMessageTelegram(
     })();
 
     const result = await sendMedia(mediaSender.label, mediaSender.sender);
-    const mediaMessageId = resolveTelegramMessageIdOrThrow(result, "media send");
+    const mediaMessageId = String(result?.message_id ?? "unknown");
     const resolvedChatId = String(result?.chat?.id ?? chatId);
-    recordSentMessage(chatId, mediaMessageId);
+    if (result?.message_id) {
+      recordSentMessage(chatId, result.message_id);
+    }
     recordChannelActivity({
       channel: "telegram",
       accountId: account.accountId,
@@ -721,15 +708,13 @@ export async function sendMessageTelegram(
           : undefined;
       const textRes = await sendTelegramText(followUpText, textParams);
       // Return the text message ID as the "main" message (it's the actual content).
-      const textMessageId = resolveTelegramMessageIdOrThrow(textRes, "text follow-up send");
-      recordSentMessage(chatId, textMessageId);
       return {
-        messageId: String(textMessageId),
+        messageId: String(textRes?.message_id ?? mediaMessageId),
         chatId: resolvedChatId,
       };
     }
 
-    return { messageId: String(mediaMessageId), chatId: resolvedChatId };
+    return { messageId: mediaMessageId, chatId: resolvedChatId };
   }
 
   if (!text || !text.trim()) {
@@ -743,14 +728,16 @@ export async function sendMessageTelegram(
         }
       : undefined;
   const res = await sendTelegramText(text, textParams, opts.plainText);
-  const messageId = resolveTelegramMessageIdOrThrow(res, "text send");
-  recordSentMessage(chatId, messageId);
+  const messageId = String(res?.message_id ?? "unknown");
+  if (res?.message_id) {
+    recordSentMessage(chatId, res.message_id);
+  }
   recordChannelActivity({
     channel: "telegram",
     accountId: account.accountId,
     direction: "outbound",
   });
-  return { messageId: String(messageId), chatId: String(res?.chat?.id ?? chatId) };
+  return { messageId, chatId: String(res?.chat?.id ?? chatId) };
 }
 
 export async function reactMessageTelegram(
@@ -945,7 +932,7 @@ export async function editMessageTelegram(
   return { ok: true, messageId: String(messageId), chatId };
 }
 
-function inferFilename(kind: MediaKind) {
+function inferFilename(kind: ReturnType<typeof mediaKindFromMime>) {
   switch (kind) {
     case "image":
       return "image.jpg";
@@ -1026,20 +1013,21 @@ export async function sendStickerTelegram(
       requestWithChatNotFound(() => api.sendSticker(chatId, fileId.trim(), effectiveParams), label),
   );
 
-  const messageId = resolveTelegramMessageIdOrThrow(result, "sticker send");
+  const messageId = String(result?.message_id ?? "unknown");
   const resolvedChatId = String(result?.chat?.id ?? chatId);
-  recordSentMessage(chatId, messageId);
+  if (result?.message_id) {
+    recordSentMessage(chatId, result.message_id);
+  }
   recordChannelActivity({
     channel: "telegram",
     accountId: account.accountId,
     direction: "outbound",
   });
 
-  return { messageId: String(messageId), chatId: resolvedChatId };
+  return { messageId, chatId: resolvedChatId };
 }
 
 type TelegramPollOpts = {
-  cfg?: ReturnType<typeof loadConfig>;
   token?: string;
   accountId?: string;
   verbose?: boolean;
@@ -1133,10 +1121,12 @@ export async function sendPollTelegram(
       ),
   );
 
-  const messageId = resolveTelegramMessageIdOrThrow(result, "poll send");
+  const messageId = String(result?.message_id ?? "unknown");
   const resolvedChatId = String(result?.chat?.id ?? chatId);
   const pollId = result?.poll?.id;
-  recordSentMessage(chatId, messageId);
+  if (result?.message_id) {
+    recordSentMessage(chatId, result.message_id);
+  }
 
   recordChannelActivity({
     channel: "telegram",
@@ -1144,7 +1134,7 @@ export async function sendPollTelegram(
     direction: "outbound",
   });
 
-  return { messageId: String(messageId), chatId: resolvedChatId, pollId };
+  return { messageId, chatId: resolvedChatId, pollId };
 }
 
 // ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ export type SandboxDockerSettings = {
   capDrop?: string[];
   /** Extra environment variables for sandbox exec. */
   env?: Record<string, string>;
-  /** Optional setup command run once after container creation (array entries are joined by newline). */
+  /** Optional setup command run once after container creation. */
   setupCommand?: string;
   /** Limit container PIDs (0 = Docker default). */
   pidsLimit?: number;
@@ -42,21 +42,6 @@ export type SandboxDockerSettings = {
   extraHosts?: string[];
   /** Additional bind mounts (host:container:mode format, e.g. ["/host/path:/container/path:rw"]). */
   binds?: string[];
-  /**
-   * Dangerous override: allow bind mounts that target reserved container paths
-   * like /workspace or /agent.
-   */
-  dangerouslyAllowReservedContainerTargets?: boolean;
-  /**
-   * Dangerous override: allow bind mount sources outside runtime allowlisted roots
-   * (workspace + agent workspace roots).
-   */
-  dangerouslyAllowExternalBindSources?: boolean;
-  /**
-   * Dangerous override: allow Docker `network: "container:<id>"` namespace joins.
-   * Default behavior blocks container namespace joins to preserve sandbox isolation.
-   */
-  dangerouslyAllowContainerNamespaceJoin?: boolean;
 };
 
 export type SandboxBrowserSettings = {

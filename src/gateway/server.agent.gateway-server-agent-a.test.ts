@@ -20,22 +20,17 @@ installGatewayTestHooks({ scope: "suite" });
 
 let server: Awaited<ReturnType<typeof startServerWithClient>>["server"];
 let ws: Awaited<ReturnType<typeof startServerWithClient>>["ws"];
-let sharedSessionStoreDir: string;
-let sharedSessionStorePath: string;
 
 beforeAll(async () => {
   const started = await startServerWithClient();
   server = started.server;
   ws = started.ws;
   await connectOk(ws);
-  sharedSessionStoreDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gw-session-"));
-  sharedSessionStorePath = path.join(sharedSessionStoreDir, "sessions.json");
 });
 
 afterAll(async () => {
   ws.close();
   await server.close();
-  await fs.rm(sharedSessionStoreDir, { recursive: true, force: true });
 });
 
 const BASE_IMAGE_PNG =
@@ -54,7 +49,8 @@ async function setTestSessionStore(params: {
   entries: Record<string, Record<string, unknown>>;
   agentId?: string;
 }) {
-  testState.sessionStorePath = sharedSessionStorePath;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gw-"));
+  testState.sessionStorePath = path.join(dir, "sessions.json");
   await writeSessionStore({
     entries: params.entries,
     agentId: params.agentId,
@@ -217,7 +213,10 @@ describe("gateway server agent", () => {
 
   test("agent preserves spawnDepth on subagent sessions", async () => {
     setRegistry(defaultRegistry);
-    await setTestSessionStore({
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gw-"));
+    const storePath = path.join(dir, "sessions.json");
+    testState.sessionStorePath = storePath;
+    await writeSessionStore({
       entries: {
         "agent:main:subagent:depth": {
           sessionId: "sess-sub-depth",
@@ -235,7 +234,7 @@ describe("gateway server agent", () => {
     });
     expect(res.ok).toBe(true);
 
-    const raw = await fs.readFile(sharedSessionStorePath, "utf-8");
+    const raw = await fs.readFile(storePath, "utf-8");
     const persisted = JSON.parse(raw) as Record<
       string,
       { spawnDepth?: number; spawnedBy?: string }

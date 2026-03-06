@@ -1,4 +1,4 @@
-import type { ChannelDirectoryEntry } from "openclaw/plugin-sdk/matrix";
+import type { ChannelDirectoryEntry } from "openclaw/plugin-sdk";
 import { resolveMatrixAuth } from "./matrix/client.js";
 
 type MatrixUserResult = {
@@ -174,8 +174,7 @@ export async function listMatrixDirectoryGroupsLive(
   }
 
   if (query.startsWith("!")) {
-    const originalId = params.query?.trim() ?? query;
-    return [createGroupDirectoryEntry({ id: originalId, name: originalId })];
+    return [createGroupDirectoryEntry({ id: query, name: query })];
   }
 
   const joined = await fetchMatrixJson<MatrixJoinedRoomsResponse>({

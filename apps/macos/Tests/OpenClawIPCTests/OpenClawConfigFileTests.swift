@@ -4,16 +4,12 @@ import Testing
 
 @Suite(.serialized)
 struct OpenClawConfigFileTests {
-    private func makeConfigOverridePath() -> String {
-        FileManager().temporaryDirectory
+    @Test
+    func configPathRespectsEnvOverride() async {
+        let override = FileManager().temporaryDirectory
             .appendingPathComponent("openclaw-config-\(UUID().uuidString)")
             .appendingPathComponent("openclaw.json")
             .path
-    }
-
-    @Test
-    func configPathRespectsEnvOverride() async {
-        let override = makeConfigOverridePath()
 
         await TestIsolation.withEnvValues(["OPENCLAW_CONFIG_PATH": override]) {
             #expect(OpenClawConfigFile.url().path == override)
@@ -23,7 +19,10 @@ struct OpenClawConfigFileTests {
     @MainActor
     @Test
     func remoteGatewayPortParsesAndMatchesHost() async {
-        let override = makeConfigOverridePath()
+        let override = FileManager().temporaryDirectory
+            .appendingPathComponent("openclaw-config-\(UUID().uuidString)")
+            .appendingPathComponent("openclaw.json")
+            .path
 
         await TestIsolation.withEnvValues(["OPENCLAW_CONFIG_PATH": override]) {
             OpenClawConfigFile.saveDict([
@@ -43,7 +42,10 @@ struct OpenClawConfigFileTests {
     @MainActor
     @Test
     func setRemoteGatewayUrlPreservesScheme() async {
-        let override = makeConfigOverridePath()
+        let override = FileManager().temporaryDirectory
+            .appendingPathComponent("openclaw-config-\(UUID().uuidString)")
+            .appendingPathComponent("openclaw.json")
+            .path
 
         await TestIsolation.withEnvValues(["OPENCLAW_CONFIG_PATH": override]) {
             OpenClawConfigFile.saveDict([
@@ -63,7 +65,10 @@ struct OpenClawConfigFileTests {
     @MainActor
     @Test
     func clearRemoteGatewayUrlRemovesOnlyUrlField() async {
-        let override = makeConfigOverridePath()
+        let override = FileManager().temporaryDirectory
+            .appendingPathComponent("openclaw-config-\(UUID().uuidString)")
+            .appendingPathComponent("openclaw.json")
+            .path
 
         await TestIsolation.withEnvValues(["OPENCLAW_CONFIG_PATH": override]) {
             OpenClawConfigFile.saveDict([

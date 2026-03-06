@@ -39,24 +39,6 @@ function baseConfig(): OpenClawConfig {
   } as unknown as OpenClawConfig;
 }
 
-function resolveModelSelectionForCommand(params: {
-  command: string;
-  allowedModelKeys: Set<string>;
-  allowedModelCatalog: Array<{ provider: string; id: string }>;
-}) {
-  return resolveModelSelectionFromDirective({
-    directives: parseInlineDirectives(params.command),
-    cfg: { commands: { text: true } } as unknown as OpenClawConfig,
-    agentDir: "/tmp/agent",
-    defaultProvider: "anthropic",
-    defaultModel: "claude-opus-4-5",
-    aliasIndex: baseAliasIndex(),
-    allowedModelKeys: params.allowedModelKeys,
-    allowedModelCatalog: params.allowedModelCatalog,
-    provider: "anthropic",
-  });
-}
-
 describe("/model chat UX", () => {
   it("shows summary for /model with no args", async () => {
     const directives = parseInlineDirectives("/model");
@@ -132,10 +114,19 @@ describe("/model chat UX", () => {
   });
 
   it("rejects numeric /model selections with a guided error", () => {
-    const resolved = resolveModelSelectionForCommand({
-      command: "/model 99",
+    const directives = parseInlineDirectives("/model 99");
+    const cfg = { commands: { text: true } } as unknown as OpenClawConfig;
+
+    const resolved = resolveModelSelectionFromDirective({
+      directives,
+      cfg,
+      agentDir: "/tmp/agent",
+      defaultProvider: "anthropic",
+      defaultModel: "claude-opus-4-5",
+      aliasIndex: baseAliasIndex(),
       allowedModelKeys: new Set(["anthropic/claude-opus-4-5", "openai/gpt-4o"]),
       allowedModelCatalog: [],
+      provider: "anthropic",
     });
 
     expect(resolved.modelSelection).toBeUndefined();
@@ -144,10 +135,19 @@ describe("/model chat UX", () => {
   });
 
   it("treats explicit default /model selection as resettable default", () => {
-    const resolved = resolveModelSelectionForCommand({
-      command: "/model anthropic/claude-opus-4-5",
+    const directives = parseInlineDirectives("/model anthropic/claude-opus-4-5");
+    const cfg = { commands: { text: true } } as unknown as OpenClawConfig;
+
+    const resolved = resolveModelSelectionFromDirective({
+      directives,
+      cfg,
+      agentDir: "/tmp/agent",
+      defaultProvider: "anthropic",
+      defaultModel: "claude-opus-4-5",
+      aliasIndex: baseAliasIndex(),
       allowedModelKeys: new Set(["anthropic/claude-opus-4-5", "openai/gpt-4o"]),
       allowedModelCatalog: [],
+      provider: "anthropic",
     });
 
     expect(resolved.errorText).toBeUndefined();
@@ -159,31 +159,25 @@ describe("/model chat UX", () => {
   });
 
   it("keeps openrouter provider/model split for exact selections", () => {
-    const resolved = resolveModelSelectionForCommand({
-      command: "/model openrouter/anthropic/claude-opus-4-5",
+    const directives = parseInlineDirectives("/model openrouter/anthropic/claude-opus-4-5");
+    const cfg = { commands: { text: true } } as unknown as OpenClawConfig;
+
+    const resolved = resolveModelSelectionFromDirective({
+      directives,
+      cfg,
+      agentDir: "/tmp/agent",
+      defaultProvider: "anthropic",
+      defaultModel: "claude-opus-4-5",
+      aliasIndex: baseAliasIndex(),
       allowedModelKeys: new Set(["openrouter/anthropic/claude-opus-4-5"]),
       allowedModelCatalog: [],
+      provider: "anthropic",
     });
 
     expect(resolved.errorText).toBeUndefined();
     expect(resolved.modelSelection).toEqual({
       provider: "openrouter",
       model: "anthropic/claude-opus-4-5",
-      isDefault: false,
-    });
-  });
-
-  it("keeps cloudflare @cf model segments for exact selections", () => {
-    const resolved = resolveModelSelectionForCommand({
-      command: "/model openai/@cf/openai/gpt-oss-20b",
-      allowedModelKeys: new Set(["openai/@cf/openai/gpt-oss-20b"]),
-      allowedModelCatalog: [],
-    });
-
-    expect(resolved.errorText).toBeUndefined();
-    expect(resolved.modelSelection).toEqual({
-      provider: "openai",
-      model: "@cf/openai/gpt-oss-20b",
       isDefault: false,
     });
   });

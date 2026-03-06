@@ -1,5 +1,4 @@
-import type { BaseProbeResult } from "openclaw/plugin-sdk/bluebubbles";
-import { normalizeSecretInputString } from "./secret-input.js";
+import type { BaseProbeResult } from "openclaw/plugin-sdk";
 import { buildBlueBubblesApiUrl, blueBubblesFetchWithTimeout } from "./types.js";
 
 export type BlueBubblesProbe = BaseProbeResult & {
@@ -36,8 +35,8 @@ export async function fetchBlueBubblesServerInfo(params: {
   accountId?: string;
   timeoutMs?: number;
 }): Promise<BlueBubblesServerInfo | null> {
-  const baseUrl = normalizeSecretInputString(params.baseUrl);
-  const password = normalizeSecretInputString(params.password);
+  const baseUrl = params.baseUrl?.trim();
+  const password = params.password?.trim();
   if (!baseUrl || !password) {
     return null;
   }
@@ -139,8 +138,8 @@ export async function probeBlueBubbles(params: {
   password?: string | null;
   timeoutMs?: number;
 }): Promise<BlueBubblesProbe> {
-  const baseUrl = normalizeSecretInputString(params.baseUrl);
-  const password = normalizeSecretInputString(params.password);
+  const baseUrl = params.baseUrl?.trim();
+  const password = params.password?.trim();
   if (!baseUrl) {
     return { ok: false, error: "serverUrl not configured" };
   }

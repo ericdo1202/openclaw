@@ -6,7 +6,6 @@ import { resolveStateDir } from "../config/paths.js";
 import { resolveUserPath } from "../utils.js";
 import { parseBooleanValue } from "../utils/boolean.js";
 import { safeJsonStringify } from "../utils/safe-json.js";
-import { redactImageDataForDiagnostics } from "./payload-redaction.js";
 import { getQueuedFileWriter, type QueuedFileWriter } from "./queued-file-writer.js";
 
 export type CacheTraceStage =
@@ -199,7 +198,7 @@ export function createCacheTrace(params: CacheTraceInit): CacheTrace | null {
       event.systemDigest = digest(payload.system);
     }
     if (payload.options) {
-      event.options = redactImageDataForDiagnostics(payload.options) as Record<string, unknown>;
+      event.options = payload.options;
     }
     if (payload.model) {
       event.model = payload.model;
@@ -213,7 +212,7 @@ export function createCacheTrace(params: CacheTraceInit): CacheTrace | null {
       event.messageFingerprints = summary.messageFingerprints;
       event.messagesDigest = summary.messagesDigest;
       if (cfg.includeMessages) {
-        event.messages = redactImageDataForDiagnostics(messages) as AgentMessage[];
+        event.messages = messages;
       }
     }
 

@@ -24,7 +24,6 @@ import type {
 import { logDebug, logError } from "../../logger.js";
 import { normalizeAccountId, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import type { RuntimeEnv } from "../../runtime.js";
-import { compileSafeRegex, testRegexWithBoundedInput } from "../../security/safe-regex.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
@@ -34,6 +33,7 @@ import { createDiscordClient, stripUndefinedFields } from "../send.shared.js";
 import { DiscordUiContainer } from "../ui.js";
 
 const EXEC_APPROVAL_KEY = "execapproval";
+
 export type { ExecApprovalRequest, ExecApprovalResolved };
 
 /** Extract Discord channel ID from a session key like "agent:main:discord:channel:123456789" */
@@ -212,9 +212,6 @@ function buildExecApprovalMetadataLines(request: ExecApprovalRequest): string[] 
   if (request.request.host) {
     lines.push(`- Host: ${request.request.host}`);
   }
-  if (Array.isArray(request.request.envKeys) && request.request.envKeys.length > 0) {
-    lines.push(`- Env Overrides: ${request.request.envKeys.join(", ")}`);
-  }
   if (request.request.agentId) {
     lines.push(`- Agent: ${request.request.agentId}`);
   }
@@ -367,11 +364,11 @@ export class DiscordExecApprovalHandler {
         return false;
       }
       const matches = config.sessionFilter.some((p) => {
-        if (session.includes(p)) {
-          return true;
+        try {
+          return session.includes(p) || new RegExp(p).test(session);
+        } catch {
+          return session.includes(p);
         }
-        const regex = compileSafeRegex(p);
-        return regex ? testRegexWithBoundedInput(regex, session) : false;
       });
       if (!matches) {
         return false;

@@ -1,5 +1,5 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/nostr";
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk/nostr";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { nostrPlugin } from "./src/channel.js";
 import type { NostrProfile } from "./src/config-schema.js";
 import { createNostrProfileHttpHandler } from "./src/nostr-profile-http.js";
@@ -61,12 +61,7 @@ const plugin = {
       log: api.logger,
     });
 
-    api.registerHttpRoute({
-      path: "/api/channels/nostr",
-      auth: "gateway",
-      match: "prefix",
-      handler: httpHandler,
-    });
+    api.registerHttpHandler(httpHandler);
   },
 };
 

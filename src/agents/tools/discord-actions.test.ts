@@ -61,7 +61,6 @@ const {
   removeReactionDiscord,
   searchMessagesDiscord,
   sendMessageDiscord,
-  sendPollDiscord,
   sendVoiceMessageDiscord,
   setChannelPermissionDiscord,
   timeoutMemberDiscord,
@@ -108,7 +107,7 @@ describe("handleDiscordMessagingAction", () => {
       expect(reactMessageDiscord).toHaveBeenCalledWith("C1", "M1", "✅", expectedOptions);
       return;
     }
-    expect(reactMessageDiscord).toHaveBeenCalledWith("C1", "M1", "✅", {});
+    expect(reactMessageDiscord).toHaveBeenCalledWith("C1", "M1", "✅");
   });
 
   it("removes reactions on empty emoji", async () => {
@@ -121,7 +120,7 @@ describe("handleDiscordMessagingAction", () => {
       },
       enableAllActions,
     );
-    expect(removeOwnReactionsDiscord).toHaveBeenCalledWith("C1", "M1", {});
+    expect(removeOwnReactionsDiscord).toHaveBeenCalledWith("C1", "M1");
   });
 
   it("removes reactions when remove flag set", async () => {
@@ -135,7 +134,7 @@ describe("handleDiscordMessagingAction", () => {
       },
       enableAllActions,
     );
-    expect(removeReactionDiscord).toHaveBeenCalledWith("C1", "M1", "✅", {});
+    expect(removeReactionDiscord).toHaveBeenCalledWith("C1", "M1", "✅");
   });
 
   it("rejects removes without emoji", async () => {
@@ -165,31 +164,6 @@ describe("handleDiscordMessagingAction", () => {
         disabledActions,
       ),
     ).rejects.toThrow(/Discord reactions are disabled/);
-  });
-
-  it("parses string booleans for poll options", async () => {
-    await handleDiscordMessagingAction(
-      "poll",
-      {
-        to: "channel:123",
-        question: "Lunch?",
-        answers: ["Pizza", "Sushi"],
-        allowMultiselect: "true",
-        durationHours: "24",
-      },
-      enableAllActions,
-    );
-
-    expect(sendPollDiscord).toHaveBeenCalledWith(
-      "channel:123",
-      {
-        question: "Lunch?",
-        options: ["Pizza", "Sushi"],
-        maxSelections: 2,
-        durationHours: 24,
-      },
-      expect.any(Object),
-    );
   });
 
   it("adds normalized timestamps to readMessages payloads", async () => {

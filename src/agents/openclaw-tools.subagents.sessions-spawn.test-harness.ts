@@ -1,9 +1,8 @@
-import { vi, type Mock } from "vitest";
+import { vi } from "vitest";
 
 type SessionsSpawnTestConfig = ReturnType<(typeof import("../config/config.js"))["loadConfig"]>;
-type CreateSessionsSpawnTool =
-  (typeof import("./tools/sessions-spawn-tool.js"))["createSessionsSpawnTool"];
-export type CreateOpenClawToolsOpts = Parameters<CreateSessionsSpawnTool>[0];
+type CreateOpenClawTools = (typeof import("./openclaw-tools.js"))["createOpenClawTools"];
+export type CreateOpenClawToolsOpts = Parameters<CreateOpenClawTools>[0];
 export type GatewayRequest = { method?: string; params?: unknown };
 export type AgentWaitCall = { runId?: string; timeoutMs?: number };
 type SessionsSpawnGatewayMockOptions = {
@@ -15,6 +14,10 @@ type SessionsSpawnGatewayMockOptions = {
   onSessionsDelete?: (params: unknown) => void;
   agentWaitResult?: { status: "ok" | "timeout"; startedAt: number; endedAt: number };
 };
+
+// Avoid exporting vitest mock types (TS2742 under pnpm + d.ts emit).
+// oxlint-disable-next-line typescript/no-explicit-any
+type AnyMock = any;
 
 const hoisted = vi.hoisted(() => {
   const callGatewayMock = vi.fn();
@@ -28,12 +31,12 @@ const hoisted = vi.hoisted(() => {
   return { callGatewayMock, defaultConfigOverride, state };
 });
 
-export function getCallGatewayMock(): Mock {
+export function getCallGatewayMock(): AnyMock {
   return hoisted.callGatewayMock;
 }
 
 export function getGatewayRequests(): Array<GatewayRequest> {
-  return getCallGatewayMock().mock.calls.map((call: unknown[]) => call[0] as GatewayRequest);
+  return getCallGatewayMock().mock.calls.map((call: [unknown]) => call[0] as GatewayRequest);
 }
 
 export function getGatewayMethods(): Array<string | undefined> {
@@ -54,8 +57,12 @@ export function setSessionsSpawnConfigOverride(next: SessionsSpawnTestConfig): v
 
 export async function getSessionsSpawnTool(opts: CreateOpenClawToolsOpts) {
   // Dynamic import: ensure harness mocks are installed before tool modules load.
-  const { createSessionsSpawnTool } = await import("./tools/sessions-spawn-tool.js");
-  return createSessionsSpawnTool(opts);
+  const { createOpenClawTools } = await import("./openclaw-tools.js");
+  const tool = createOpenClawTools(opts).find((candidate) => candidate.name === "sessions_spawn");
+  if (!tool) {
+    throw new Error("missing sessions_spawn tool");
+  }
+  return tool;
 }
 
 export function setupSessionsSpawnGatewayMock(setupOpts: SessionsSpawnGatewayMockOptions): {

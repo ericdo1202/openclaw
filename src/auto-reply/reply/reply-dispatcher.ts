@@ -1,4 +1,3 @@
-import type { TypingCallbacks } from "../../channels/typing.js";
 import type { HumanDelayConfig } from "../../config/types.js";
 import { sleep } from "../../utils.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
@@ -58,7 +57,6 @@ export type ReplyDispatcherOptions = {
 };
 
 export type ReplyDispatcherWithTypingOptions = Omit<ReplyDispatcherOptions, "onIdle"> & {
-  typingCallbacks?: TypingCallbacks;
   onReplyStart?: () => Promise<void> | void;
   onIdle?: () => void;
   /** Called when the typing controller is cleaned up (e.g., on NO_REPLY). */
@@ -69,8 +67,6 @@ type ReplyDispatcherWithTypingResult = {
   dispatcher: ReplyDispatcher;
   replyOptions: Pick<GetReplyOptions, "onReplyStart" | "onTypingController" | "onTypingCleanup">;
   markDispatchIdle: () => void;
-  /** Signal that the model run is complete so the typing controller can stop. */
-  markRunComplete: () => void;
 };
 
 export type ReplyDispatcher = {
@@ -213,34 +209,28 @@ export function createReplyDispatcher(options: ReplyDispatcherOptions): ReplyDis
 export function createReplyDispatcherWithTyping(
   options: ReplyDispatcherWithTypingOptions,
 ): ReplyDispatcherWithTypingResult {
-  const { typingCallbacks, onReplyStart, onIdle, onCleanup, ...dispatcherOptions } = options;
-  const resolvedOnReplyStart = onReplyStart ?? typingCallbacks?.onReplyStart;
-  const resolvedOnIdle = onIdle ?? typingCallbacks?.onIdle;
-  const resolvedOnCleanup = onCleanup ?? typingCallbacks?.onCleanup;
+  const { onReplyStart, onIdle, onCleanup, ...dispatcherOptions } = options;
   let typingController: TypingController | undefined;
   const dispatcher = createReplyDispatcher({
     ...dispatcherOptions,
     onIdle: () => {
       typingController?.markDispatchIdle();
-      resolvedOnIdle?.();
+      onIdle?.();
     },
   });
 
   return {
     dispatcher,
     replyOptions: {
-      onReplyStart: resolvedOnReplyStart,
-      onTypingCleanup: resolvedOnCleanup,
+      onReplyStart,
+      onTypingCleanup: onCleanup,
       onTypingController: (typing) => {
         typingController = typing;
       },
     },
     markDispatchIdle: () => {
       typingController?.markDispatchIdle();
-      resolvedOnIdle?.();
-    },
-    markRunComplete: () => {
-      typingController?.markRunComplete();
+      onIdle?.();
     },
   };
 }

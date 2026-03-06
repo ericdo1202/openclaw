@@ -1,76 +1,42 @@
-import { getSessionBindingService } from "../../../infra/outbound/session-binding-service.js";
+import { getThreadBindingManager } from "../../../discord/monitor/thread-bindings.js";
 import type { CommandHandlerResult } from "../commands-types.js";
 import {
   type SubagentsCommandContext,
   isDiscordSurface,
-  isTelegramSurface,
-  resolveChannelAccountId,
-  resolveCommandSurfaceChannel,
-  resolveTelegramConversationId,
+  resolveDiscordAccountId,
   stopWithText,
 } from "./shared.js";
 
-export async function handleSubagentsUnfocusAction(
-  ctx: SubagentsCommandContext,
-): Promise<CommandHandlerResult> {
+export function handleSubagentsUnfocusAction(ctx: SubagentsCommandContext): CommandHandlerResult {
   const { params } = ctx;
-  const channel = resolveCommandSurfaceChannel(params);
-  if (channel !== "discord" && channel !== "telegram") {
-    return stopWithText("⚠️ /unfocus is only available on Discord and Telegram.");
+  if (!isDiscordSurface(params)) {
+    return stopWithText("⚠️ /unfocus is only available on Discord.");
   }
 
-  const accountId = resolveChannelAccountId(params);
-  const bindingService = getSessionBindingService();
-
-  const conversationId = (() => {
-    if (isDiscordSurface(params)) {
-      const threadId = params.ctx.MessageThreadId != null ? String(params.ctx.MessageThreadId) : "";
-      return threadId.trim() || undefined;
-    }
-    if (isTelegramSurface(params)) {
-      return resolveTelegramConversationId(params);
-    }
-    return undefined;
-  })();
-
-  if (!conversationId) {
-    if (channel === "discord") {
-      return stopWithText("⚠️ /unfocus must be run inside a Discord thread.");
-    }
-    return stopWithText(
-      "⚠️ /unfocus on Telegram requires a topic context in groups, or a direct-message conversation.",
-    );
+  const threadId = params.ctx.MessageThreadId != null ? String(params.ctx.MessageThreadId) : "";
+  if (!threadId.trim()) {
+    return stopWithText("⚠️ /unfocus must be run inside a Discord thread.");
   }
 
-  const binding = bindingService.resolveByConversation({
-    channel,
-    accountId,
-    conversationId,
-  });
+  const threadBindings = getThreadBindingManager(resolveDiscordAccountId(params));
+  if (!threadBindings) {
+    return stopWithText("⚠️ Discord thread bindings are unavailable for this account.");
+  }
+
+  const binding = threadBindings.getByThreadId(threadId);
   if (!binding) {
-    return stopWithText(
-      channel === "discord"
-        ? "ℹ️ This thread is not currently focused."
-        : "ℹ️ This conversation is not currently focused.",
-    );
+    return stopWithText("ℹ️ This thread is not currently focused.");
   }
 
   const senderId = params.command.senderId?.trim() || "";
-  const boundBy =
-    typeof binding.metadata?.boundBy === "string" ? binding.metadata.boundBy.trim() : "";
-  if (boundBy && boundBy !== "system" && senderId && senderId !== boundBy) {
-    return stopWithText(
-      channel === "discord"
-        ? `⚠️ Only ${boundBy} can unfocus this thread.`
-        : `⚠️ Only ${boundBy} can unfocus this conversation.`,
-    );
+  if (binding.boundBy && binding.boundBy !== "system" && senderId && senderId !== binding.boundBy) {
+    return stopWithText(`⚠️ Only ${binding.boundBy} can unfocus this thread.`);
   }
 
-  await bindingService.unbind({
-    bindingId: binding.bindingId,
+  threadBindings.unbindThread({
+    threadId,
     reason: "manual",
+    sendFarewell: true,
   });
-  return stopWithText(
-    channel === "discord" ? "✅ Thread unfocused." : "✅ Conversation unfocused.",
-  );
+  return stopWithText("✅ Thread unfocused.");
 }

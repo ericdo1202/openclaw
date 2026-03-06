@@ -1,8 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type {
-  GatewayRequestHandlerOptions,
-  OpenClawPluginApi,
-} from "openclaw/plugin-sdk/voice-call";
+import type { GatewayRequestHandlerOptions, OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { registerVoiceCallCli } from "./src/cli.js";
 import {
   VoiceCallConfigSchema,
@@ -184,30 +181,12 @@ const voiceCallPlugin = {
           logger: api.logger,
         });
       }
-      try {
-        runtime = await runtimePromise;
-      } catch (err) {
-        // Reset so the next call can retry instead of caching the
-        // rejected promise forever (which also leaves the port orphaned
-        // if the server started before the failure).  See: #32387
-        runtimePromise = null;
-        throw err;
-      }
+      runtime = await runtimePromise;
       return runtime;
     };
 
     const sendError = (respond: (ok: boolean, payload?: unknown) => void, err: unknown) => {
       respond(false, { error: err instanceof Error ? err.message : String(err) });
-    };
-
-    const resolveCallMessageRequest = async (params: GatewayRequestHandlerOptions["params"]) => {
-      const callId = typeof params?.callId === "string" ? params.callId.trim() : "";
-      const message = typeof params?.message === "string" ? params.message.trim() : "";
-      if (!callId || !message) {
-        return { error: "callId and message required" } as const;
-      }
-      const rt = await ensureRuntime();
-      return { rt, callId, message } as const;
     };
 
     api.registerGatewayMethod(
@@ -249,12 +228,14 @@ const voiceCallPlugin = {
       "voicecall.continue",
       async ({ params, respond }: GatewayRequestHandlerOptions) => {
         try {
-          const request = await resolveCallMessageRequest(params);
-          if ("error" in request) {
-            respond(false, { error: request.error });
+          const callId = typeof params?.callId === "string" ? params.callId.trim() : "";
+          const message = typeof params?.message === "string" ? params.message.trim() : "";
+          if (!callId || !message) {
+            respond(false, { error: "callId and message required" });
             return;
           }
-          const result = await request.rt.manager.continueCall(request.callId, request.message);
+          const rt = await ensureRuntime();
+          const result = await rt.manager.continueCall(callId, message);
           if (!result.success) {
             respond(false, { error: result.error || "continue failed" });
             return;
@@ -270,12 +251,14 @@ const voiceCallPlugin = {
       "voicecall.speak",
       async ({ params, respond }: GatewayRequestHandlerOptions) => {
         try {
-          const request = await resolveCallMessageRequest(params);
-          if ("error" in request) {
-            respond(false, { error: request.error });
+          const callId = typeof params?.callId === "string" ? params.callId.trim() : "";
+          const message = typeof params?.message === "string" ? params.message.trim() : "";
+          if (!callId || !message) {
+            respond(false, { error: "callId and message required" });
             return;
           }
-          const result = await request.rt.manager.speak(request.callId, request.message);
+          const rt = await ensureRuntime();
+          const result = await rt.manager.speak(callId, message);
           if (!result.success) {
             respond(false, { error: result.error || "speak failed" });
             return;

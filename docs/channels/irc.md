@@ -57,8 +57,7 @@ Config keys:
 - Per-channel controls (channel + sender + mention rules): `channels.irc.groups["#channel"]`
 - `channels.irc.groupPolicy="open"` allows unconfigured channels (**still mention-gated by default**)
 
-Allowlist entries should use stable sender identities (`nick!user@host`).
-Bare nick matching is mutable and only enabled when `channels.irc.dangerouslyAllowNameMatching: true`.
+Allowlist entries can use nick or `nick!user@host` forms.
 
 ### Common gotcha: `allowFrom` is for DMs, not channels
 

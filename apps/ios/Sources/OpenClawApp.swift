@@ -4,7 +4,7 @@ import OpenClawKit
 import os
 import UIKit
 import BackgroundTasks
-@preconcurrency import UserNotifications
+import UserNotifications
 
 private struct PendingWatchPromptAction {
     var promptId: String?
@@ -119,19 +119,11 @@ final class OpenClawAppDelegate: NSObject, UIApplicationDelegate, @preconcurrenc
         request.earliestBeginDate = Date().addingTimeInterval(max(60, delay))
         do {
             try BGTaskScheduler.shared.submit(request)
-            let scheduledLogMessage =
-                "Scheduled background wake refresh reason=\(reason) "
-                + "delaySeconds=\(max(60, delay))"
             self.backgroundWakeLogger.info(
-                "\(scheduledLogMessage, privacy: .public)"
-            )
+                "Scheduled background wake refresh reason=\(reason, privacy: .public) delaySeconds=\(max(60, delay), privacy: .public)")
         } catch {
-            let failedLogMessage =
-                "Failed scheduling background wake refresh reason=\(reason) "
-                + "error=\(error.localizedDescription)"
             self.backgroundWakeLogger.error(
-                "\(failedLogMessage, privacy: .public)"
-            )
+                "Failed scheduling background wake refresh reason=\(reason, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -190,30 +182,8 @@ final class OpenClawAppDelegate: NSObject, UIApplicationDelegate, @preconcurrenc
                 actionLabel: actionLabel,
                 sessionKey: sessionKey)
         default:
-            break
-        }
-
-        guard response.actionIdentifier.hasPrefix(WatchPromptNotificationBridge.actionIdentifierPrefix) else {
             return nil
         }
-        let indexString = String(
-            response.actionIdentifier.dropFirst(WatchPromptNotificationBridge.actionIdentifierPrefix.count))
-        guard let actionIndex = Int(indexString), actionIndex >= 0 else {
-            return nil
-        }
-        let actionIdKey = WatchPromptNotificationBridge.actionIDKey(index: actionIndex)
-        let actionLabelKey = WatchPromptNotificationBridge.actionLabelKey(index: actionIndex)
-        let actionId = (userInfo[actionIdKey] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !actionId.isEmpty else {
-            return nil
-        }
-        let actionLabel = userInfo[actionLabelKey] as? String
-        return PendingWatchPromptAction(
-            promptId: promptId,
-            actionId: actionId,
-            actionLabel: actionLabel,
-            sessionKey: sessionKey)
     }
 
     private func routeWatchPromptAction(_ action: PendingWatchPromptAction) async {
@@ -273,9 +243,6 @@ enum WatchPromptNotificationBridge {
     static let actionSecondaryLabelKey = "openclaw.watch.action.secondary.label"
     static let actionPrimaryIdentifier = "openclaw.watch.action.primary"
     static let actionSecondaryIdentifier = "openclaw.watch.action.secondary"
-    static let actionIdentifierPrefix = "openclaw.watch.action."
-    static let actionIDKeyPrefix = "openclaw.watch.action.id."
-    static let actionLabelKeyPrefix = "openclaw.watch.action.label."
     static let categoryPrefix = "openclaw.watch.prompt.category."
 
     @MainActor
@@ -297,15 +264,16 @@ enum WatchPromptNotificationBridge {
             guard !id.isEmpty, !label.isEmpty else { return nil }
             return OpenClawWatchAction(id: id, label: label, style: action.style)
         }
-        let displayedActions = Array(normalizedActions.prefix(4))
+        let primaryAction = normalizedActions.first
+        let secondaryAction = normalizedActions.dropFirst().first
 
         let center = UNUserNotificationCenter.current()
         var categoryIdentifier = ""
-        if !displayedActions.isEmpty {
+        if let primaryAction {
             let categoryID = "\(self.categoryPrefix)\(invokeID)"
             let category = UNNotificationCategory(
                 identifier: categoryID,
-                actions: self.categoryActions(displayedActions),
+                actions: self.categoryActions(primaryAction: primaryAction, secondaryAction: secondaryAction),
                 intentIdentifiers: [],
                 options: [])
             await self.upsertNotificationCategory(category, center: center)
@@ -321,16 +289,13 @@ enum WatchPromptNotificationBridge {
         if let sessionKey = params.sessionKey?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionKey.isEmpty {
             userInfo[self.sessionKeyKey] = sessionKey
         }
-        for (index, action) in displayedActions.enumerated() {
-            userInfo[self.actionIDKey(index: index)] = action.id
-            userInfo[self.actionLabelKey(index: index)] = action.label
-            if index == 0 {
-                userInfo[self.actionPrimaryIDKey] = action.id
-                userInfo[self.actionPrimaryLabelKey] = action.label
-            } else if index == 1 {
-                userInfo[self.actionSecondaryIDKey] = action.id
-                userInfo[self.actionSecondaryLabelKey] = action.label
-            }
+        if let primaryAction {
+            userInfo[self.actionPrimaryIDKey] = primaryAction.id
+            userInfo[self.actionPrimaryLabelKey] = primaryAction.label
+        }
+        if let secondaryAction {
+            userInfo[self.actionSecondaryIDKey] = secondaryAction.id
+            userInfo[self.actionSecondaryLabelKey] = secondaryAction.label
         }
 
         let content = UNMutableNotificationContent()
@@ -359,30 +324,24 @@ enum WatchPromptNotificationBridge {
         try? await self.addNotificationRequest(request, center: center)
     }
 
-    static func actionIDKey(index: Int) -> String {
-        "\(self.actionIDKeyPrefix)\(index)"
-    }
-
-    static func actionLabelKey(index: Int) -> String {
-        "\(self.actionLabelKeyPrefix)\(index)"
-    }
-
-    private static func categoryActions(_ actions: [OpenClawWatchAction]) -> [UNNotificationAction] {
-        actions.enumerated().map { index, action in
-            let identifier: String
-            switch index {
-            case 0:
-                identifier = self.actionPrimaryIdentifier
-            case 1:
-                identifier = self.actionSecondaryIdentifier
-            default:
-                identifier = "\(self.actionIdentifierPrefix)\(index)"
-            }
-            return UNNotificationAction(
-                identifier: identifier,
-                title: action.label,
-                options: self.notificationActionOptions(style: action.style))
+    private static func categoryActions(
+        primaryAction: OpenClawWatchAction,
+        secondaryAction: OpenClawWatchAction?) -> [UNNotificationAction]
+    {
+        var actions: [UNNotificationAction] = [
+            UNNotificationAction(
+                identifier: self.actionPrimaryIdentifier,
+                title: primaryAction.label,
+                options: self.notificationActionOptions(style: primaryAction.style))
+        ]
+        if let secondaryAction {
+            actions.append(
+                UNNotificationAction(
+                    identifier: self.actionSecondaryIdentifier,
+                    title: secondaryAction.label,
+                    options: self.notificationActionOptions(style: secondaryAction.style)))
         }
+        return actions
     }
 
     private static func notificationActionOptions(style: String?) -> UNNotificationActionOptions {
@@ -426,9 +385,7 @@ enum WatchPromptNotificationBridge {
         }
     }
 
-    private static func notificationAuthorizationStatus(
-        center: UNUserNotificationCenter
-    ) async -> UNAuthorizationStatus {
+    private static func notificationAuthorizationStatus(center: UNUserNotificationCenter) async -> UNAuthorizationStatus {
         await withCheckedContinuation { continuation in
             center.getNotificationSettings { settings in
                 continuation.resume(returning: settings.authorizationStatus)
@@ -450,13 +407,14 @@ enum WatchPromptNotificationBridge {
         }
     }
 
-    private static func addNotificationRequest(
-        _ request: UNNotificationRequest,
-        center: UNUserNotificationCenter
-    ) async throws {
+    private static func addNotificationRequest(_ request: UNNotificationRequest, center: UNUserNotificationCenter) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             center.add(request) { error in
-                ThrowingContinuationSupport.resumeVoid(continuation, error: error)
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
             }
         }
     }

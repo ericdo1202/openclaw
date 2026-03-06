@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { blockedIpv6MulticastLiterals } from "../../shared/net/ip-test-fixtures.js";
 import { normalizeFingerprint } from "../tls/fingerprint.js";
 import { isBlockedHostnameOrIp, isPrivateIpAddress } from "./ssrf.js";
 
@@ -39,7 +38,6 @@ const privateIpCases = [
   "fe80::1%lo0",
   "fd00::1",
   "fec0::1",
-  ...blockedIpv6MulticastLiterals,
   "2001:db8:1234::5efe:127.0.0.1",
   "2001:db8:1234:1:200:5efe:7f00:1",
 ];
@@ -124,14 +122,6 @@ describe("isBlockedHostnameOrIp", () => {
   it("blocks IPv4 special-use ranges but allows adjacent public ranges", () => {
     expect(isBlockedHostnameOrIp("198.18.0.1")).toBe(true);
     expect(isBlockedHostnameOrIp("198.20.0.1")).toBe(false);
-  });
-
-  it("supports opt-in policy to allow RFC2544 benchmark range", () => {
-    const policy = { allowRfc2544BenchmarkRange: true };
-    expect(isBlockedHostnameOrIp("198.18.0.1")).toBe(true);
-    expect(isBlockedHostnameOrIp("198.18.0.1", policy)).toBe(false);
-    expect(isBlockedHostnameOrIp("::ffff:198.18.0.1", policy)).toBe(false);
-    expect(isBlockedHostnameOrIp("198.51.100.1", policy)).toBe(true);
   });
 
   it("blocks legacy IPv4 literal representations", () => {

@@ -7,7 +7,7 @@ import {
   type ReplyPayload,
   SILENT_REPLY_TOKEN,
   sleep,
-} from "openclaw/plugin-sdk/msteams";
+} from "openclaw/plugin-sdk";
 import type { MSTeamsAccessTokenProvider } from "./attachments/types.js";
 import type { StoredConversationReference } from "./conversation-store.js";
 import { classifyMSTeamsSendError } from "./errors.js";
@@ -20,7 +20,6 @@ import {
 } from "./graph-upload.js";
 import { extractFilename, extractMessageId, getMimeType, isLocalPath } from "./media-helpers.js";
 import { parseMentions } from "./mentions.js";
-import { withRevokedProxyFallback } from "./revoked-context.js";
 import { getMSTeamsRuntime } from "./runtime.js";
 
 /**
@@ -442,53 +441,24 @@ export async function sendMSTeamsMessages(params: {
     }
   };
 
-  const sendMessageInContext = async (
-    ctx: SendContext,
-    message: MSTeamsRenderedMessage,
-    messageIndex: number,
-  ): Promise<string> => {
-    const response = await sendWithRetry(
-      async () =>
-        await ctx.sendActivity(
-          await buildActivity(
-            message,
-            params.conversationRef,
-            params.tokenProvider,
-            params.sharePointSiteId,
-            params.mediaMaxBytes,
+  const sendMessagesInContext = async (ctx: SendContext): Promise<string[]> => {
+    const messageIds: string[] = [];
+    for (const [idx, message] of messages.entries()) {
+      const response = await sendWithRetry(
+        async () =>
+          await ctx.sendActivity(
+            await buildActivity(
+              message,
+              params.conversationRef,
+              params.tokenProvider,
+              params.sharePointSiteId,
+              params.mediaMaxBytes,
+            ),
           ),
-        ),
-      { messageIndex, messageCount: messages.length },
-    );
-    return extractMessageId(response) ?? "unknown";
-  };
-
-  const sendMessageBatchInContext = async (
-    ctx: SendContext,
-    batch: MSTeamsRenderedMessage[],
-    startIndex: number,
-  ): Promise<string[]> => {
-    const messageIds: string[] = [];
-    for (const [idx, message] of batch.entries()) {
-      messageIds.push(await sendMessageInContext(ctx, message, startIndex + idx));
+        { messageIndex: idx, messageCount: messages.length },
+      );
+      messageIds.push(extractMessageId(response) ?? "unknown");
     }
-    return messageIds;
-  };
-
-  const sendProactively = async (
-    batch: MSTeamsRenderedMessage[],
-    startIndex: number,
-  ): Promise<string[]> => {
-    const baseRef = buildConversationReference(params.conversationRef);
-    const proactiveRef: MSTeamsConversationReference = {
-      ...baseRef,
-      activityId: undefined,
-    };
-
-    const messageIds: string[] = [];
-    await params.adapter.continueConversation(params.appId, proactiveRef, async (ctx) => {
-      messageIds.push(...(await sendMessageBatchInContext(ctx, batch, startIndex)));
-    });
     return messageIds;
   };
 
@@ -497,28 +467,18 @@ export async function sendMSTeamsMessages(params: {
     if (!ctx) {
       throw new Error("Missing context for replyStyle=thread");
     }
-    const messageIds: string[] = [];
-    for (const [idx, message] of messages.entries()) {
-      const result = await withRevokedProxyFallback({
-        run: async () => ({
-          ids: [await sendMessageInContext(ctx, message, idx)],
-          fellBack: false,
-        }),
-        onRevoked: async () => {
-          const remaining = messages.slice(idx);
-          return {
-            ids: remaining.length > 0 ? await sendProactively(remaining, idx) : [],
-            fellBack: true,
-          };
-        },
-      });
-      messageIds.push(...result.ids);
-      if (result.fellBack) {
-        return messageIds;
-      }
-    }
-    return messageIds;
+    return await sendMessagesInContext(ctx);
   }
 
-  return await sendProactively(messages, 0);
+  const baseRef = buildConversationReference(params.conversationRef);
+  const proactiveRef: MSTeamsConversationReference = {
+    ...baseRef,
+    activityId: undefined,
+  };
+
+  const messageIds: string[] = [];
+  await params.adapter.continueConversation(params.appId, proactiveRef, async (ctx) => {
+    messageIds.push(...(await sendMessagesInContext(ctx)));
+  });
+  return messageIds;
 }

@@ -53,10 +53,6 @@ export function resolveGatewayErrorDetailCode(
 export type GatewayHelloOk = {
   type: "hello-ok";
   protocol: number;
-  server?: {
-    version?: string;
-    connId?: string;
-  };
   features?: { methods?: string[]; events?: string[] };
   snapshot?: unknown;
   auth?: {
@@ -233,7 +229,7 @@ export class GatewayBrowserClient {
       maxProtocol: 3,
       client: {
         id: this.opts.clientName ?? GATEWAY_CLIENT_NAMES.CONTROL_UI,
-        version: this.opts.clientVersion ?? "control-ui",
+        version: this.opts.clientVersion ?? "dev",
         platform: this.opts.platform ?? navigator.platform ?? "web",
         mode: this.opts.mode ?? GATEWAY_CLIENT_MODES.WEBCHAT,
         instanceId: this.opts.instanceId,

@@ -12,31 +12,35 @@ function makeProvider(params: { id: string; label?: string; aliases?: string[] }
 }
 
 describe("resolveRequestedLoginProviderOrThrow", () => {
-  it("returns null and resolves provider by id/alias", () => {
+  it("returns null when no provider was requested", () => {
+    const providers = [makeProvider({ id: "google-gemini-cli" })];
+    const result = resolveRequestedLoginProviderOrThrow(providers, undefined);
+    expect(result).toBeNull();
+  });
+
+  it("resolves requested provider by id", () => {
     const providers = [
-      makeProvider({ id: "google-gemini-cli", aliases: ["gemini-cli"] }),
+      makeProvider({ id: "google-gemini-cli" }),
       makeProvider({ id: "qwen-portal" }),
     ];
-    const scenarios = [
-      { requested: undefined, expectedId: null },
-      { requested: "google-gemini-cli", expectedId: "google-gemini-cli" },
-      { requested: "gemini-cli", expectedId: "google-gemini-cli" },
-    ] as const;
+    const result = resolveRequestedLoginProviderOrThrow(providers, "google-gemini-cli");
+    expect(result?.id).toBe("google-gemini-cli");
+  });
 
-    for (const scenario of scenarios) {
-      const result = resolveRequestedLoginProviderOrThrow(providers, scenario.requested);
-      expect(result?.id ?? null).toBe(scenario.expectedId);
-    }
+  it("resolves requested provider by alias", () => {
+    const providers = [makeProvider({ id: "google-gemini-cli", aliases: ["gemini-cli"] })];
+    const result = resolveRequestedLoginProviderOrThrow(providers, "gemini-cli");
+    expect(result?.id).toBe("google-gemini-cli");
   });
 
   it("throws when requested provider is not loaded", () => {
-    const loadedProviders = [
+    const providers = [
       makeProvider({ id: "google-gemini-cli" }),
       makeProvider({ id: "qwen-portal" }),
     ];
 
     expect(() =>
-      resolveRequestedLoginProviderOrThrow(loadedProviders, "google-antigravity"),
+      resolveRequestedLoginProviderOrThrow(providers, "google-antigravity"),
     ).toThrowError(
       'Unknown provider "google-antigravity". Loaded providers: google-gemini-cli, qwen-portal. Verify plugins via `openclaw plugins list --json`.',
     );

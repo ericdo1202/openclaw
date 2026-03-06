@@ -4,12 +4,10 @@ import {
   DmPolicySchema,
   GroupPolicySchema,
   MarkdownConfigSchema,
-  ReplyRuntimeConfigSchemaShape,
   ToolPolicySchema,
   requireOpenAllowFrom,
-} from "openclaw/plugin-sdk/nextcloud-talk";
+} from "openclaw/plugin-sdk";
 import { z } from "zod";
-import { buildSecretInputSchema } from "./secret-input.js";
 
 export const NextcloudTalkRoomSchema = z
   .object({
@@ -28,10 +26,10 @@ export const NextcloudTalkAccountSchemaBase = z
     enabled: z.boolean().optional(),
     markdown: MarkdownConfigSchema,
     baseUrl: z.string().optional(),
-    botSecret: buildSecretInputSchema().optional(),
+    botSecret: z.string().optional(),
     botSecretFile: z.string().optional(),
     apiUser: z.string().optional(),
-    apiPassword: buildSecretInputSchema().optional(),
+    apiPassword: z.string().optional(),
     apiPasswordFile: z.string().optional(),
     dmPolicy: DmPolicySchema.optional().default("pairing"),
     webhookPort: z.number().int().positive().optional(),
@@ -42,7 +40,15 @@ export const NextcloudTalkAccountSchemaBase = z
     groupAllowFrom: z.array(z.string()).optional(),
     groupPolicy: GroupPolicySchema.optional().default("allowlist"),
     rooms: z.record(z.string(), NextcloudTalkRoomSchema.optional()).optional(),
-    ...ReplyRuntimeConfigSchemaShape,
+    historyLimit: z.number().int().min(0).optional(),
+    dmHistoryLimit: z.number().int().min(0).optional(),
+    dms: z.record(z.string(), DmConfigSchema.optional()).optional(),
+    textChunkLimit: z.number().int().positive().optional(),
+    chunkMode: z.enum(["length", "newline"]).optional(),
+    blockStreaming: z.boolean().optional(),
+    blockStreamingCoalesce: BlockStreamingCoalesceSchema.optional(),
+    responsePrefix: z.string().optional(),
+    mediaMaxMb: z.number().positive().optional(),
   })
   .strict();
 
@@ -61,7 +67,6 @@ export const NextcloudTalkAccountSchema = NextcloudTalkAccountSchemaBase.superRe
 
 export const NextcloudTalkConfigSchema = NextcloudTalkAccountSchemaBase.extend({
   accounts: z.record(z.string(), NextcloudTalkAccountSchema.optional()).optional(),
-  defaultAccount: z.string().optional(),
 }).superRefine((value, ctx) => {
   requireOpenAllowFrom({
     policy: value.dmPolicy,

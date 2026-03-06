@@ -1,9 +1,8 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { SILENT_REPLY_TOKEN, type PluginRuntime } from "openclaw/plugin-sdk/msteams";
+import { SILENT_REPLY_TOKEN, type PluginRuntime } from "openclaw/plugin-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createPluginRuntimeMock } from "../../test-utils/plugin-runtime-mock.js";
 import type { StoredConversationReference } from "./conversation-store.js";
 const graphUploadMockState = vi.hoisted(() => ({
   uploadAndShareOneDrive: vi.fn(),
@@ -39,7 +38,7 @@ const chunkMarkdownText = (text: string, limit: number) => {
   return chunks;
 };
 
-const runtimeStub: PluginRuntime = createPluginRuntimeMock({
+const runtimeStub = {
   channel: {
     text: {
       chunkMarkdownText,
@@ -48,7 +47,7 @@ const runtimeStub: PluginRuntime = createPluginRuntimeMock({
       convertMarkdownTables: (text: string) => text,
     },
   },
-});
+} as unknown as PluginRuntime;
 
 const createNoopAdapter = (): MSTeamsAdapter => ({
   continueConversation: async () => {},
@@ -93,12 +92,12 @@ describe("msteams messenger", () => {
       expect(messages).toEqual([]);
     });
 
-    it("does not filter non-exact silent reply prefixes", () => {
+    it("filters silent reply prefixes", () => {
       const messages = renderReplyPayloadsToMessages(
         [{ text: `${SILENT_REPLY_TOKEN} -- ignored` }],
         { textChunkLimit: 4000, tableMode: "code" },
       );
-      expect(messages).toEqual([{ text: `${SILENT_REPLY_TOKEN} -- ignored` }]);
+      expect(messages).toEqual([]);
     });
 
     it("splits media into separate messages by default", () => {
@@ -290,79 +289,6 @@ describe("msteams messenger", () => {
           retry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
         }),
       ).rejects.toMatchObject({ statusCode: 400 });
-    });
-
-    it("falls back to proactive messaging when thread context is revoked", async () => {
-      const proactiveSent: string[] = [];
-
-      const ctx = {
-        sendActivity: async () => {
-          throw new TypeError("Cannot perform 'set' on a proxy that has been revoked");
-        },
-      };
-
-      const adapter: MSTeamsAdapter = {
-        continueConversation: async (_appId, _reference, logic) => {
-          await logic({
-            sendActivity: createRecordedSendActivity(proactiveSent),
-          });
-        },
-        process: async () => {},
-      };
-
-      const ids = await sendMSTeamsMessages({
-        replyStyle: "thread",
-        adapter,
-        appId: "app123",
-        conversationRef: baseRef,
-        context: ctx,
-        messages: [{ text: "hello" }],
-      });
-
-      // Should have fallen back to proactive messaging
-      expect(proactiveSent).toEqual(["hello"]);
-      expect(ids).toEqual(["id:hello"]);
-    });
-
-    it("falls back only for remaining thread messages after context revocation", async () => {
-      const threadSent: string[] = [];
-      const proactiveSent: string[] = [];
-      let attempt = 0;
-
-      const ctx = {
-        sendActivity: async (activity: unknown) => {
-          const { text } = activity as { text?: string };
-          const content = text ?? "";
-          attempt += 1;
-          if (attempt === 1) {
-            threadSent.push(content);
-            return { id: `id:${content}` };
-          }
-          throw new TypeError("Cannot perform 'set' on a proxy that has been revoked");
-        },
-      };
-
-      const adapter: MSTeamsAdapter = {
-        continueConversation: async (_appId, _reference, logic) => {
-          await logic({
-            sendActivity: createRecordedSendActivity(proactiveSent),
-          });
-        },
-        process: async () => {},
-      };
-
-      const ids = await sendMSTeamsMessages({
-        replyStyle: "thread",
-        adapter,
-        appId: "app123",
-        conversationRef: baseRef,
-        context: ctx,
-        messages: [{ text: "one" }, { text: "two" }, { text: "three" }],
-      });
-
-      expect(threadSent).toEqual(["one"]);
-      expect(proactiveSent).toEqual(["two", "three"]);
-      expect(ids).toEqual(["id:one", "id:two", "id:three"]);
     });
 
     it("retries top-level sends on transient (5xx)", async () => {

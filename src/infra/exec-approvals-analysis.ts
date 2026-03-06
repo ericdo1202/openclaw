@@ -616,51 +616,22 @@ export function buildSafeShellCommand(params: { command: string; platform?: stri
       return { ok: true, rendered: argv.map((token) => shellEscapeSingleArg(token)).join(" ") };
     },
   });
-  return finalizeRebuiltShellCommand(rebuilt);
+  if (!rebuilt.ok) {
+    return { ok: false, reason: rebuilt.reason };
+  }
+  return { ok: true, command: rebuilt.command };
 }
 
 function renderQuotedArgv(argv: string[]): string {
   return argv.map((token) => shellEscapeSingleArg(token)).join(" ");
 }
 
-function finalizeRebuiltShellCommand(
-  rebuilt: ReturnType<typeof rebuildShellCommandFromSource>,
-  expectedSegmentCount?: number,
-): { ok: boolean; command?: string; reason?: string } {
-  if (!rebuilt.ok) {
-    return { ok: false, reason: rebuilt.reason };
+function renderSafeBinSegmentArgv(segment: ExecCommandSegment): string {
+  if (segment.argv.length === 0) {
+    return "";
   }
-  if (typeof expectedSegmentCount === "number" && rebuilt.segmentCount !== expectedSegmentCount) {
-    return { ok: false, reason: "segment count mismatch" };
-  }
-  return { ok: true, command: rebuilt.command };
-}
-
-export function resolvePlannedSegmentArgv(segment: ExecCommandSegment): string[] | null {
-  if (segment.resolution?.policyBlocked === true) {
-    return null;
-  }
-  const baseArgv =
-    segment.resolution?.effectiveArgv && segment.resolution.effectiveArgv.length > 0
-      ? segment.resolution.effectiveArgv
-      : segment.argv;
-  if (baseArgv.length === 0) {
-    return null;
-  }
-  const argv = [...baseArgv];
-  const resolvedExecutable =
-    segment.resolution?.resolvedRealPath?.trim() ?? segment.resolution?.resolvedPath?.trim() ?? "";
-  if (resolvedExecutable) {
-    argv[0] = resolvedExecutable;
-  }
-  return argv;
-}
-
-function renderSafeBinSegmentArgv(segment: ExecCommandSegment): string | null {
-  const argv = resolvePlannedSegmentArgv(segment);
-  if (!argv || argv.length === 0) {
-    return null;
-  }
+  const resolvedExecutable = segment.resolution?.resolvedPath?.trim();
+  const argv = resolvedExecutable ? [resolvedExecutable, ...segment.argv.slice(1)] : segment.argv;
   return renderQuotedArgv(argv);
 }
 
@@ -688,40 +659,16 @@ export function buildSafeBinsShellCommand(params: {
         return { ok: false, reason: "segment mapping failed" };
       }
       const needsLiteral = by === "safeBins";
-      if (!needsLiteral) {
-        return { ok: true, rendered: raw.trim() };
-      }
-      const rendered = renderSafeBinSegmentArgv(seg);
-      if (!rendered) {
-        return { ok: false, reason: "segment execution plan unavailable" };
-      }
-      return { ok: true, rendered };
+      return { ok: true, rendered: needsLiteral ? renderSafeBinSegmentArgv(seg) : raw.trim() };
     },
   });
-  return finalizeRebuiltShellCommand(rebuilt, params.segments.length);
-}
-
-export function buildEnforcedShellCommand(params: {
-  command: string;
-  segments: ExecCommandSegment[];
-  platform?: string | null;
-}): { ok: boolean; command?: string; reason?: string } {
-  const rebuilt = rebuildShellCommandFromSource({
-    command: params.command,
-    platform: params.platform,
-    renderSegment: (_raw, segmentIndex) => {
-      const seg = params.segments[segmentIndex];
-      if (!seg) {
-        return { ok: false, reason: "segment mapping failed" };
-      }
-      const argv = resolvePlannedSegmentArgv(seg);
-      if (!argv) {
-        return { ok: false, reason: "segment execution plan unavailable" };
-      }
-      return { ok: true, rendered: renderQuotedArgv(argv) };
-    },
-  });
-  return finalizeRebuiltShellCommand(rebuilt, params.segments.length);
+  if (!rebuilt.ok) {
+    return { ok: false, reason: rebuilt.reason };
+  }
+  if (rebuilt.segmentCount !== params.segments.length) {
+    return { ok: false, reason: "segment count mismatch" };
+  }
+  return { ok: true, command: rebuilt.command };
 }
 
 /**

@@ -1,11 +1,5 @@
 import { lookup } from "node:dns/promises";
-import {
-  buildHostnameAllowlistPolicyFromSuffixAllowlist,
-  isHttpsUrlAllowedByHostnameSuffixAllowlist,
-  isPrivateIpAddress,
-  normalizeHostnameSuffixAllowlist,
-} from "openclaw/plugin-sdk/msteams";
-import type { SsrFPolicy } from "openclaw/plugin-sdk/msteams";
+import { isPrivateIpAddress } from "openclaw/plugin-sdk";
 import type { MSTeamsAttachmentLike } from "./types.js";
 
 type InlineImageCandidate =
@@ -258,52 +252,57 @@ export function safeHostForUrl(url: string): string {
   }
 }
 
+function normalizeAllowHost(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed === "*") {
+    return "*";
+  }
+  return trimmed.replace(/^\*\.?/, "");
+}
+
 export function resolveAllowedHosts(input?: string[]): string[] {
-  return normalizeHostnameSuffixAllowlist(input, DEFAULT_MEDIA_HOST_ALLOWLIST);
+  if (!Array.isArray(input) || input.length === 0) {
+    return DEFAULT_MEDIA_HOST_ALLOWLIST.slice();
+  }
+  const normalized = input.map(normalizeAllowHost).filter(Boolean);
+  if (normalized.includes("*")) {
+    return ["*"];
+  }
+  return normalized;
 }
 
 export function resolveAuthAllowedHosts(input?: string[]): string[] {
-  return normalizeHostnameSuffixAllowlist(input, DEFAULT_MEDIA_AUTH_HOST_ALLOWLIST);
+  if (!Array.isArray(input) || input.length === 0) {
+    return DEFAULT_MEDIA_AUTH_HOST_ALLOWLIST.slice();
+  }
+  const normalized = input.map(normalizeAllowHost).filter(Boolean);
+  if (normalized.includes("*")) {
+    return ["*"];
+  }
+  return normalized;
 }
 
-export type MSTeamsAttachmentFetchPolicy = {
-  allowHosts: string[];
-  authAllowHosts: string[];
-};
-
-export function resolveAttachmentFetchPolicy(params?: {
-  allowHosts?: string[];
-  authAllowHosts?: string[];
-}): MSTeamsAttachmentFetchPolicy {
-  return {
-    allowHosts: resolveAllowedHosts(params?.allowHosts),
-    authAllowHosts: resolveAuthAllowedHosts(params?.authAllowHosts),
-  };
+function isHostAllowed(host: string, allowlist: string[]): boolean {
+  if (allowlist.includes("*")) {
+    return true;
+  }
+  const normalized = host.toLowerCase();
+  return allowlist.some((entry) => normalized === entry || normalized.endsWith(`.${entry}`));
 }
 
 export function isUrlAllowed(url: string, allowlist: string[]): boolean {
-  return isHttpsUrlAllowedByHostnameSuffixAllowlist(url, allowlist);
-}
-
-export function applyAuthorizationHeaderForUrl(params: {
-  headers: Headers;
-  url: string;
-  authAllowHosts: string[];
-  bearerToken?: string;
-}): void {
-  if (!params.bearerToken) {
-    params.headers.delete("Authorization");
-    return;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") {
+      return false;
+    }
+    return isHostAllowed(parsed.hostname, allowlist);
+  } catch {
+    return false;
   }
-  if (isUrlAllowed(params.url, params.authAllowHosts)) {
-    params.headers.set("Authorization", `Bearer ${params.bearerToken}`);
-    return;
-  }
-  params.headers.delete("Authorization");
-}
-
-export function resolveMediaSsrfPolicy(allowHosts: string[]): SsrFPolicy | undefined {
-  return buildHostnameAllowlistPolicyFromSuffixAllowlist(allowHosts);
 }
 
 /**
@@ -342,52 +341,34 @@ const MAX_SAFE_REDIRECTS = 5;
 
 /**
  * Fetch a URL with redirect: "manual", validating each redirect target
- * against the hostname allowlist and optional DNS-resolved IP (anti-SSRF).
+ * against the hostname allowlist and DNS-resolved IP (anti-SSRF).
  *
  * This prevents:
  * - Auto-following redirects to non-allowlisted hosts
- * - DNS rebinding attacks when a lookup function is provided
+ * - DNS rebinding attacks where an allowlisted domain resolves to a private IP
  */
 export async function safeFetch(params: {
   url: string;
   allowHosts: string[];
-  /**
-   * Optional allowlist for forwarding Authorization across redirects.
-   * When set, Authorization is stripped before following redirects to hosts
-   * outside this list.
-   */
-  authorizationAllowHosts?: string[];
   fetchFn?: typeof fetch;
   requestInit?: RequestInit;
   resolveFn?: (hostname: string) => Promise<{ address: string }>;
 }): Promise<Response> {
   const fetchFn = params.fetchFn ?? fetch;
   const resolveFn = params.resolveFn;
-  const hasDispatcher = Boolean(
-    params.requestInit &&
-    typeof params.requestInit === "object" &&
-    "dispatcher" in (params.requestInit as Record<string, unknown>),
-  );
-  const currentHeaders = new Headers(params.requestInit?.headers);
   let currentUrl = params.url;
 
-  if (!isUrlAllowed(currentUrl, params.allowHosts)) {
+  // Validate the initial URL's resolved IP
+  try {
+    const initialHost = new URL(currentUrl).hostname;
+    await resolveAndValidateIP(initialHost, resolveFn);
+  } catch {
     throw new Error(`Initial download URL blocked: ${currentUrl}`);
-  }
-
-  if (resolveFn) {
-    try {
-      const initialHost = new URL(currentUrl).hostname;
-      await resolveAndValidateIP(initialHost, resolveFn);
-    } catch {
-      throw new Error(`Initial download URL blocked: ${currentUrl}`);
-    }
   }
 
   for (let i = 0; i <= MAX_SAFE_REDIRECTS; i++) {
     const res = await fetchFn(currentUrl, {
       ...params.requestInit,
-      headers: currentHeaders,
       redirect: "manual",
     });
 
@@ -412,48 +393,12 @@ export async function safeFetch(params: {
       throw new Error(`Media redirect target blocked by allowlist: ${redirectUrl}`);
     }
 
-    // Prevent credential bleed: only keep Authorization on redirect hops that
-    // are explicitly auth-allowlisted.
-    if (
-      currentHeaders.has("authorization") &&
-      params.authorizationAllowHosts &&
-      !isUrlAllowed(redirectUrl, params.authorizationAllowHosts)
-    ) {
-      currentHeaders.delete("authorization");
-    }
-
-    // When a pinned dispatcher is already injected by an upstream guard
-    // (for example fetchWithSsrFGuard), let that guard own redirect handling
-    // after this allowlist validation step.
-    if (hasDispatcher) {
-      return res;
-    }
-
     // Validate redirect target's resolved IP
-    if (resolveFn) {
-      const redirectHost = new URL(redirectUrl).hostname;
-      await resolveAndValidateIP(redirectHost, resolveFn);
-    }
+    const redirectHost = new URL(redirectUrl).hostname;
+    await resolveAndValidateIP(redirectHost, resolveFn);
 
     currentUrl = redirectUrl;
   }
 
   throw new Error(`Too many redirects (>${MAX_SAFE_REDIRECTS})`);
-}
-
-export async function safeFetchWithPolicy(params: {
-  url: string;
-  policy: MSTeamsAttachmentFetchPolicy;
-  fetchFn?: typeof fetch;
-  requestInit?: RequestInit;
-  resolveFn?: (hostname: string) => Promise<{ address: string }>;
-}): Promise<Response> {
-  return await safeFetch({
-    url: params.url,
-    allowHosts: params.policy.allowHosts,
-    authorizationAllowHosts: params.policy.authAllowHosts,
-    fetchFn: params.fetchFn,
-    requestInit: params.requestInit,
-    resolveFn: params.resolveFn,
-  });
 }

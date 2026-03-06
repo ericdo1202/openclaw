@@ -1,6 +1,3 @@
-import { deriveRelayToken } from './background-utils.js'
-import { classifyRelayCheckException, classifyRelayCheckResponse } from './options-validation.js'
-
 const DEFAULT_PORT = 18792
 
 function clampPort(value) {
@@ -14,6 +11,12 @@ function updateRelayUrl(port) {
   const el = document.getElementById('relay-url')
   if (!el) return
   el.textContent = `http://127.0.0.1:${port}/`
+}
+
+function relayHeaders(token) {
+  const t = String(token || '').trim()
+  if (!t) return {}
+  return { 'x-openclaw-relay-token': t }
 }
 
 function setStatus(kind, message) {
@@ -30,21 +33,27 @@ async function checkRelayReachable(port, token) {
     setStatus('error', 'Gateway token required. Save your gateway token to connect.')
     return
   }
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 1200)
   try {
-    const relayToken = await deriveRelayToken(trimmedToken, port)
-    // Delegate the fetch to the background service worker to bypass
-    // CORS preflight on the custom x-openclaw-relay-token header.
-    const res = await chrome.runtime.sendMessage({
-      type: 'relayCheck',
-      url,
-      token: relayToken,
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: relayHeaders(trimmedToken),
+      signal: ctrl.signal,
     })
-    const result = classifyRelayCheckResponse(res, port)
-    if (result.action === 'throw') throw new Error(result.error)
-    setStatus(result.kind, result.message)
-  } catch (err) {
-    const result = classifyRelayCheckException(err, port)
-    setStatus(result.kind, result.message)
+    if (res.status === 401) {
+      setStatus('error', 'Gateway token rejected. Check token and save again.')
+      return
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    setStatus('ok', `Relay reachable and authenticated at http://127.0.0.1:${port}/`)
+  } catch {
+    setStatus(
+      'error',
+      `Relay not reachable/authenticated at http://127.0.0.1:${port}/. Start OpenClaw browser relay and verify token.`,
+    )
+  } finally {
+    clearTimeout(t)
   }
 }
 

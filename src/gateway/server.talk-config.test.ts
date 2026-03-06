@@ -1,12 +1,4 @@
-import os from "node:os";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  loadOrCreateDeviceIdentity,
-  publicKeyRawBase64UrlFromPem,
-  signDevicePayload,
-} from "../infra/device-identity.js";
-import { buildDeviceAuthPayload } from "./device-auth.js";
 import {
   connectOk,
   installGatewayTestHooks,
@@ -18,16 +10,21 @@ import { withServer } from "./test-with-server.js";
 installGatewayTestHooks({ scope: "suite" });
 
 type GatewaySocket = Parameters<Parameters<typeof withServer>[0]>[0];
-const TALK_CONFIG_DEVICE_PATH = path.join(
-  os.tmpdir(),
-  `openclaw-talk-config-device-${process.pid}.json`,
-);
-const TALK_CONFIG_DEVICE = loadOrCreateDeviceIdentity(TALK_CONFIG_DEVICE_PATH);
 
 async function createFreshOperatorDevice(scopes: string[], nonce: string) {
+  const { randomUUID } = await import("node:crypto");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { buildDeviceAuthPayload } = await import("./device-auth.js");
+  const { loadOrCreateDeviceIdentity, publicKeyRawBase64UrlFromPem, signDevicePayload } =
+    await import("../infra/device-identity.js");
+
+  const identity = loadOrCreateDeviceIdentity(
+    join(tmpdir(), `openclaw-talk-config-${randomUUID()}.json`),
+  );
   const signedAtMs = Date.now();
   const payload = buildDeviceAuthPayload({
-    deviceId: TALK_CONFIG_DEVICE.deviceId,
+    deviceId: identity.deviceId,
     clientId: "test",
     clientMode: "test",
     role: "operator",
@@ -38,9 +35,9 @@ async function createFreshOperatorDevice(scopes: string[], nonce: string) {
   });
 
   return {
-    id: TALK_CONFIG_DEVICE.deviceId,
-    publicKey: publicKeyRawBase64UrlFromPem(TALK_CONFIG_DEVICE.publicKeyPem),
-    signature: signDevicePayload(TALK_CONFIG_DEVICE.privateKeyPem, payload),
+    id: identity.deviceId,
+    publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),
+    signature: signDevicePayload(identity.privateKeyPem, payload),
     signedAt: signedAtMs,
     nonce,
   };
@@ -79,24 +76,12 @@ describe("gateway talk.config", () => {
 
     await withServer(async (ws) => {
       await connectOperator(ws, ["operator.read"]);
-      const res = await rpcReq<{
-        config?: {
-          talk?: {
-            provider?: string;
-            providers?: {
-              elevenlabs?: { voiceId?: string; apiKey?: string };
-            };
-            apiKey?: string;
-            voiceId?: string;
-          };
-        };
-      }>(ws, "talk.config", {});
-      expect(res.ok).toBe(true);
-      expect(res.payload?.config?.talk?.provider).toBe("elevenlabs");
-      expect(res.payload?.config?.talk?.providers?.elevenlabs?.voiceId).toBe("voice-123");
-      expect(res.payload?.config?.talk?.providers?.elevenlabs?.apiKey).toBe(
-        "__OPENCLAW_REDACTED__",
+      const res = await rpcReq<{ config?: { talk?: { apiKey?: string; voiceId?: string } } }>(
+        ws,
+        "talk.config",
+        {},
       );
+      expect(res.ok).toBe(true);
       expect(res.payload?.config?.talk?.voiceId).toBe("voice-123");
       expect(res.payload?.config?.talk?.apiKey).toBe("__OPENCLAW_REDACTED__");
     });
@@ -123,40 +108,6 @@ describe("gateway talk.config", () => {
       });
       expect(res.ok).toBe(true);
       expect(res.payload?.config?.talk?.apiKey).toBe("secret-key-abc");
-    });
-  });
-
-  it("prefers normalized provider payload over conflicting legacy talk keys", async () => {
-    const { writeConfigFile } = await import("../config/config.js");
-    await writeConfigFile({
-      talk: {
-        provider: "elevenlabs",
-        providers: {
-          elevenlabs: {
-            voiceId: "voice-normalized",
-          },
-        },
-        voiceId: "voice-legacy",
-      },
-    });
-
-    await withServer(async (ws) => {
-      await connectOperator(ws, ["operator.read"]);
-      const res = await rpcReq<{
-        config?: {
-          talk?: {
-            provider?: string;
-            providers?: {
-              elevenlabs?: { voiceId?: string };
-            };
-            voiceId?: string;
-          };
-        };
-      }>(ws, "talk.config", {});
-      expect(res.ok).toBe(true);
-      expect(res.payload?.config?.talk?.provider).toBe("elevenlabs");
-      expect(res.payload?.config?.talk?.providers?.elevenlabs?.voiceId).toBe("voice-normalized");
-      expect(res.payload?.config?.talk?.voiceId).toBe("voice-normalized");
     });
   });
 });

@@ -1,4 +1,3 @@
-import { getAcpSessionManager } from "../../acp/control-plane/manager.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { abortEmbeddedPiRun } from "../../agents/pi-embedded.js";
 import {
@@ -21,79 +20,18 @@ import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
 import { normalizeCommandBody, type CommandNormalizeOptions } from "../commands-registry.js";
 import type { FinalizedMsgContext, MsgContext } from "../templating.js";
-import {
-  applyAbortCutoffToSessionEntry,
-  resolveAbortCutoffFromContext,
-  shouldPersistAbortCutoff,
-} from "./abort-cutoff.js";
 import { stripMentions, stripStructuralPrefixes } from "./mentions.js";
 import { clearSessionQueues } from "./queue.js";
 
-export { resolveAbortCutoffFromContext, shouldSkipMessageByAbortCutoff } from "./abort-cutoff.js";
-
-const ABORT_TRIGGERS = new Set([
-  "stop",
-  "esc",
-  "abort",
-  "wait",
-  "exit",
-  "interrupt",
-  "detente",
-  "deten",
-  "detén",
-  "arrete",
-  "arrête",
-  "停止",
-  "やめて",
-  "止めて",
-  "रुको",
-  "توقف",
-  "стоп",
-  "остановись",
-  "останови",
-  "остановить",
-  "прекрати",
-  "halt",
-  "anhalten",
-  "aufhören",
-  "hoer auf",
-  "stopp",
-  "pare",
-  "stop openclaw",
-  "openclaw stop",
-  "stop action",
-  "stop current action",
-  "stop run",
-  "stop current run",
-  "stop agent",
-  "stop the agent",
-  "stop don't do anything",
-  "stop dont do anything",
-  "stop do not do anything",
-  "stop doing anything",
-  "do not do that",
-  "please stop",
-  "stop please",
-]);
+const ABORT_TRIGGERS = new Set(["stop", "esc", "abort", "wait", "exit", "interrupt"]);
 const ABORT_MEMORY = new Map<string, boolean>();
 const ABORT_MEMORY_MAX = 2000;
-const TRAILING_ABORT_PUNCTUATION_RE = /[.!?…,，。;；:：'"’”)\]}]+$/u;
-
-function normalizeAbortTriggerText(text: string): string {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[’`]/g, "'")
-    .replace(/\s+/g, " ")
-    .replace(TRAILING_ABORT_PUNCTUATION_RE, "")
-    .trim();
-}
 
 export function isAbortTrigger(text?: string): boolean {
   if (!text) {
     return false;
   }
-  const normalized = normalizeAbortTriggerText(text);
+  const normalized = text.trim().toLowerCase();
   return ABORT_TRIGGERS.has(normalized);
 }
 
@@ -105,12 +43,7 @@ export function isAbortRequestText(text?: string, options?: CommandNormalizeOpti
   if (!normalized) {
     return false;
   }
-  const normalizedLower = normalized.toLowerCase();
-  return (
-    normalizedLower === "/stop" ||
-    normalizeAbortTriggerText(normalizedLower) === "/stop" ||
-    isAbortTrigger(normalizedLower)
-  );
+  return normalized.toLowerCase() === "/stop" || isAbortTrigger(normalized);
 }
 
 export function getAbortMemory(key: string): boolean | undefined {
@@ -302,42 +235,16 @@ export async function tryFastAbortFromMessage(params: {
     const storePath = resolveStorePath(cfg.session?.store, { agentId });
     const store = loadSessionStore(storePath);
     const { entry, key } = resolveSessionEntryForKey(store, targetKey);
-    const resolvedTargetKey = key ?? targetKey;
-    const acpManager = getAcpSessionManager();
-    const acpResolution = acpManager.resolveSession({
-      cfg,
-      sessionKey: resolvedTargetKey,
-    });
-    if (acpResolution.kind !== "none") {
-      try {
-        await acpManager.cancelSession({
-          cfg,
-          sessionKey: resolvedTargetKey,
-          reason: "fast-abort",
-        });
-      } catch (error) {
-        logVerbose(
-          `abort: ACP cancel failed for ${resolvedTargetKey}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
     const sessionId = entry?.sessionId;
     const aborted = sessionId ? abortEmbeddedPiRun(sessionId) : false;
-    const cleared = clearSessionQueues([resolvedTargetKey, sessionId]);
+    const cleared = clearSessionQueues([key ?? targetKey, sessionId]);
     if (cleared.followupCleared > 0 || cleared.laneCleared > 0) {
       logVerbose(
         `abort: cleared followups=${cleared.followupCleared} lane=${cleared.laneCleared} keys=${cleared.keys.join(",")}`,
       );
     }
-    const abortCutoff = shouldPersistAbortCutoff({
-      commandSessionKey: ctx.SessionKey,
-      targetSessionKey: resolvedTargetKey,
-    })
-      ? resolveAbortCutoffFromContext(ctx)
-      : undefined;
     if (entry && key) {
       entry.abortedLastRun = true;
-      applyAbortCutoffToSessionEntry(entry, abortCutoff);
       entry.updatedAt = Date.now();
       store[key] = entry;
       await updateSessionStore(storePath, (nextStore) => {
@@ -346,7 +253,6 @@ export async function tryFastAbortFromMessage(params: {
           return;
         }
         nextEntry.abortedLastRun = true;
-        applyAbortCutoffToSessionEntry(nextEntry, abortCutoff);
         nextEntry.updatedAt = Date.now();
         nextStore[key] = nextEntry;
       });

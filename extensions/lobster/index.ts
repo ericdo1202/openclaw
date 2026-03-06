@@ -2,7 +2,7 @@ import type {
   AnyAgentTool,
   OpenClawPluginApi,
   OpenClawPluginToolFactory,
-} from "openclaw/plugin-sdk/lobster";
+} from "../../src/plugins/types.js";
 import { createLobsterTool } from "./src/lobster-tool.js";
 
 export default function register(api: OpenClawPluginApi) {

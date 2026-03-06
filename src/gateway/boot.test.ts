@@ -6,10 +6,7 @@ import type { SessionScope } from "../config/sessions/types.js";
 
 const agentCommand = vi.fn();
 
-vi.mock("../commands/agent.js", () => ({
-  agentCommand,
-  agentCommandFromIngress: agentCommand,
-}));
+vi.mock("../commands/agent.js", () => ({ agentCommand }));
 
 const { runBootOnce } = await import("./boot.js");
 const { resolveAgentIdFromSessionKey, resolveAgentMainSessionKey, resolveMainSessionKey } =
@@ -77,19 +74,6 @@ describe("runBootOnce", () => {
       };
       await saveSessionStore(storePath, current);
     });
-  };
-
-  const expectMainSessionRestored = (params: {
-    storePath: string;
-    sessionKey: string;
-    expectedSessionId?: string;
-  }) => {
-    const restored = loadSessionStore(params.storePath, { skipCache: true });
-    if (params.expectedSessionId === undefined) {
-      expect(restored[params.sessionKey]).toBeUndefined();
-      return;
-    }
-    expect(restored[params.sessionKey]?.sessionId).toBe(params.expectedSessionId);
   };
 
   it("skips when BOOT.md is missing", async () => {
@@ -242,7 +226,8 @@ describe("runBootOnce", () => {
         status: "ran",
       });
 
-      expectMainSessionRestored({ storePath, sessionKey, expectedSessionId: existingSessionId });
+      const restored = loadSessionStore(storePath, { skipCache: true });
+      expect(restored[sessionKey]?.sessionId).toBe(existingSessionId);
     });
   });
 
@@ -257,7 +242,8 @@ describe("runBootOnce", () => {
         status: "ran",
       });
 
-      expectMainSessionRestored({ storePath, sessionKey });
+      const restored = loadSessionStore(storePath, { skipCache: true });
+      expect(restored[sessionKey]).toBeUndefined();
     });
   });
 });

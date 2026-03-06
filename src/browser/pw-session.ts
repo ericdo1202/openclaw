@@ -9,15 +9,10 @@ import type {
 import { chromium } from "playwright-core";
 import { formatErrorMessage } from "../infra/errors.js";
 import type { SsrFPolicy } from "../infra/net/ssrf.js";
-import { withNoProxyForCdpUrl } from "./cdp-proxy-bypass.js";
 import { appendCdpPath, fetchJson, getHeadersWithAuth, withCdpSocket } from "./cdp.helpers.js";
 import { normalizeCdpWsUrl } from "./cdp.js";
 import { getChromeWebSocketUrl } from "./chrome.js";
-import {
-  assertBrowserNavigationAllowed,
-  assertBrowserNavigationResultAllowed,
-  withBrowserNavigationPolicy,
-} from "./navigation-guard.js";
+import { assertBrowserNavigationAllowed, withBrowserNavigationPolicy } from "./navigation-guard.js";
 
 export type BrowserConsoleMessage = {
   type: string;
@@ -337,10 +332,7 @@ async function connectBrowser(cdpUrl: string): Promise<ConnectedBrowser> {
         const wsUrl = await getChromeWebSocketUrl(normalized, timeout).catch(() => null);
         const endpoint = wsUrl ?? normalized;
         const headers = getHeadersWithAuth(endpoint);
-        // Bypass proxy for loopback CDP connections (#31219)
-        const browser = await withNoProxyForCdpUrl(endpoint, () =>
-          chromium.connectOverCDP(endpoint, { timeout, headers }),
-        );
+        const browser = await chromium.connectOverCDP(endpoint, { timeout, headers });
         const onDisconnected = () => {
           if (cached?.browser === browser) {
             cached = null;
@@ -454,18 +446,6 @@ async function findPageByTargetId(
     }
   }
   return null;
-}
-
-async function resolvePageByTargetIdOrThrow(opts: {
-  cdpUrl: string;
-  targetId: string;
-}): Promise<Page> {
-  const { browser } = await connectBrowser(opts.cdpUrl);
-  const page = await findPageByTargetId(browser, opts.targetId, opts.cdpUrl);
-  if (!page) {
-    throw new Error("tab not found");
-  }
-  return page;
 }
 
 export async function getPageForTargetId(opts: {
@@ -758,17 +738,12 @@ export async function createPageViaPlaywright(opts: {
   // Navigate to the URL
   const targetUrl = opts.url.trim() || "about:blank";
   if (targetUrl !== "about:blank") {
-    const navigationPolicy = withBrowserNavigationPolicy(opts.ssrfPolicy);
     await assertBrowserNavigationAllowed({
       url: targetUrl,
-      ...navigationPolicy,
+      ...withBrowserNavigationPolicy(opts.ssrfPolicy),
     });
     await page.goto(targetUrl, { timeout: 30_000 }).catch(() => {
       // Navigation might fail for some URLs, but page is still created
-    });
-    await assertBrowserNavigationResultAllowed({
-      url: page.url(),
-      ...navigationPolicy,
     });
   }
 
@@ -794,7 +769,11 @@ export async function closePageByTargetIdViaPlaywright(opts: {
   cdpUrl: string;
   targetId: string;
 }): Promise<void> {
-  const page = await resolvePageByTargetIdOrThrow(opts);
+  const { browser } = await connectBrowser(opts.cdpUrl);
+  const page = await findPageByTargetId(browser, opts.targetId, opts.cdpUrl);
+  if (!page) {
+    throw new Error("tab not found");
+  }
   await page.close();
 }
 
@@ -806,7 +785,11 @@ export async function focusPageByTargetIdViaPlaywright(opts: {
   cdpUrl: string;
   targetId: string;
 }): Promise<void> {
-  const page = await resolvePageByTargetIdOrThrow(opts);
+  const { browser } = await connectBrowser(opts.cdpUrl);
+  const page = await findPageByTargetId(browser, opts.targetId, opts.cdpUrl);
+  if (!page) {
+    throw new Error("tab not found");
+  }
   try {
     await page.bringToFront();
   } catch (err) {

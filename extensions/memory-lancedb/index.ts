@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import type * as LanceDB from "@lancedb/lancedb";
 import { Type } from "@sinclair/typebox";
 import OpenAI from "openai";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/memory-lancedb";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import {
   DEFAULT_CAPTURE_MAX_CHARS,
   MEMORY_CATEGORIES,
@@ -166,21 +166,15 @@ class Embeddings {
   constructor(
     apiKey: string,
     private model: string,
-    baseUrl?: string,
-    private dimensions?: number,
   ) {
-    this.client = new OpenAI({ apiKey, baseURL: baseUrl });
+    this.client = new OpenAI({ apiKey });
   }
 
   async embed(text: string): Promise<number[]> {
-    const params: { model: string; input: string; dimensions?: number } = {
+    const response = await this.client.embeddings.create({
       model: this.model,
       input: text,
-    };
-    if (this.dimensions) {
-      params.dimensions = this.dimensions;
-    }
-    const response = await this.client.embeddings.create(params);
+    });
     return response.data[0].embedding;
   }
 }
@@ -299,11 +293,9 @@ const memoryPlugin = {
   register(api: OpenClawPluginApi) {
     const cfg = memoryConfigSchema.parse(api.pluginConfig);
     const resolvedDbPath = api.resolvePath(cfg.dbPath!);
-    const { model, dimensions, apiKey, baseUrl } = cfg.embedding;
-
-    const vectorDim = dimensions ?? vectorDimsForModel(model);
+    const vectorDim = vectorDimsForModel(cfg.embedding.model ?? "text-embedding-3-small");
     const db = new MemoryDB(resolvedDbPath, vectorDim);
-    const embeddings = new Embeddings(apiKey, model, baseUrl, dimensions);
+    const embeddings = new Embeddings(cfg.embedding.apiKey, cfg.embedding.model!);
 
     api.logger.info(`memory-lancedb: plugin registered (db: ${resolvedDbPath}, lazy init)`);
 

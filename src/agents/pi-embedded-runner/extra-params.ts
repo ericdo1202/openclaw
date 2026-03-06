@@ -14,7 +14,7 @@ const ANTHROPIC_1M_MODEL_PREFIXES = ["claude-opus-4", "claude-sonnet-4"] as cons
 // NOTE: We only force `store=true` for *direct* OpenAI Responses.
 // Codex responses (chatgpt.com/backend-api/codex/responses) require `store=false`.
 const OPENAI_RESPONSES_APIS = new Set(["openai-responses"]);
-const OPENAI_RESPONSES_PROVIDERS = new Set(["openai", "azure-openai-responses"]);
+const OPENAI_RESPONSES_PROVIDERS = new Set(["openai"]);
 
 /**
  * Resolve provider-specific extra params from model config.
@@ -26,28 +26,15 @@ export function resolveExtraParams(params: {
   cfg: OpenClawConfig | undefined;
   provider: string;
   modelId: string;
-  agentId?: string;
 }): Record<string, unknown> | undefined {
   const modelKey = `${params.provider}/${params.modelId}`;
   const modelConfig = params.cfg?.agents?.defaults?.models?.[modelKey];
-  const globalParams = modelConfig?.params ? { ...modelConfig.params } : undefined;
-  const agentParams =
-    params.agentId && params.cfg?.agents?.list
-      ? params.cfg.agents.list.find((agent) => agent.id === params.agentId)?.params
-      : undefined;
-
-  if (!globalParams && !agentParams) {
-    return undefined;
-  }
-
-  return Object.assign({}, globalParams, agentParams);
+  return modelConfig?.params ? { ...modelConfig.params } : undefined;
 }
 
 type CacheRetention = "none" | "short" | "long";
-type OpenAIServiceTier = "auto" | "default" | "flex" | "priority";
 type CacheRetentionStreamOptions = Partial<SimpleStreamOptions> & {
   cacheRetention?: CacheRetention;
-  openaiWsWarmup?: boolean;
 };
 
 /**
@@ -56,25 +43,16 @@ type CacheRetentionStreamOptions = Partial<SimpleStreamOptions> & {
  *
  * Mapping: "5m" → "short", "1h" → "long"
  *
- * Applies to:
- * - direct Anthropic provider
- * - Anthropic Claude models on Bedrock when cache retention is explicitly configured
+ * Only applies to Anthropic provider (OpenRouter uses openai-completions API
+ * with hardcoded cache_control, not the cacheRetention stream option).
  *
- * OpenRouter uses openai-completions API with hardcoded cache_control instead
- * of the cacheRetention stream option.
- *
- * Defaults to "short" for direct Anthropic when not explicitly configured.
+ * Defaults to "short" for Anthropic provider when not explicitly configured.
  */
 function resolveCacheRetention(
   extraParams: Record<string, unknown> | undefined,
   provider: string,
 ): CacheRetention | undefined {
-  const isAnthropicDirect = provider === "anthropic";
-  const hasBedrockOverride =
-    extraParams?.cacheRetention !== undefined || extraParams?.cacheControlTtl !== undefined;
-  const isAnthropicBedrock = provider === "amazon-bedrock" && hasBedrockOverride;
-
-  if (!isAnthropicDirect && !isAnthropicBedrock) {
+  if (provider !== "anthropic") {
     return undefined;
   }
 
@@ -93,13 +71,7 @@ function resolveCacheRetention(
     return "long";
   }
 
-  // Default to "short" only for direct Anthropic when not explicitly configured.
-  // Bedrock retains upstream provider defaults unless explicitly set.
-  if (!isAnthropicDirect) {
-    return undefined;
-  }
-
-  // Default to "short" for direct Anthropic when not explicitly configured
+  // Default to "short" for Anthropic when not explicitly configured
   return "short";
 }
 
@@ -118,16 +90,6 @@ function createStreamFnWithExtraParams(
   }
   if (typeof extraParams.maxTokens === "number") {
     streamParams.maxTokens = extraParams.maxTokens;
-  }
-  const transport = extraParams.transport;
-  if (transport === "sse" || transport === "websocket" || transport === "auto") {
-    streamParams.transport = transport;
-  } else if (transport != null) {
-    const transportSummary = typeof transport === "string" ? transport : typeof transport;
-    log.warn(`ignoring invalid transport param: ${transportSummary}`);
-  }
-  if (typeof extraParams.openaiWsWarmup === "boolean") {
-    streamParams.openaiWsWarmup = extraParams.openaiWsWarmup;
   }
   const cacheRetention = resolveCacheRetention(extraParams, provider);
   if (cacheRetention) {
@@ -175,49 +137,17 @@ function createStreamFnWithExtraParams(
   return wrappedStreamFn;
 }
 
-function isAnthropicBedrockModel(modelId: string): boolean {
-  const normalized = modelId.toLowerCase();
-  return normalized.includes("anthropic.claude") || normalized.includes("anthropic/claude");
-}
-
-function createBedrockNoCacheWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) =>
-    underlying(model, context, {
-      ...options,
-      cacheRetention: "none",
-    });
-}
-
 function isDirectOpenAIBaseUrl(baseUrl: unknown): boolean {
   if (typeof baseUrl !== "string" || !baseUrl.trim()) {
-    return false;
+    return true;
   }
 
   try {
     const host = new URL(baseUrl).hostname.toLowerCase();
-    return (
-      host === "api.openai.com" || host === "chatgpt.com" || host.endsWith(".openai.azure.com")
-    );
+    return host === "api.openai.com" || host === "chatgpt.com";
   } catch {
     const normalized = baseUrl.toLowerCase();
-    return (
-      normalized.includes("api.openai.com") ||
-      normalized.includes("chatgpt.com") ||
-      normalized.includes(".openai.azure.com")
-    );
-  }
-}
-
-function isOpenAIPublicApiBaseUrl(baseUrl: unknown): boolean {
-  if (typeof baseUrl !== "string" || !baseUrl.trim()) {
-    return false;
-  }
-
-  try {
-    return new URL(baseUrl).hostname.toLowerCase() === "api.openai.com";
-  } catch {
-    return baseUrl.toLowerCase().includes("api.openai.com");
+    return normalized.includes("api.openai.com") || normalized.includes("chatgpt.com");
   }
 }
 
@@ -225,13 +155,7 @@ function shouldForceResponsesStore(model: {
   api?: unknown;
   provider?: unknown;
   baseUrl?: unknown;
-  compat?: { supportsStore?: boolean };
 }): boolean {
-  // Never force store=true when the model explicitly declares supportsStore=false
-  // (e.g. Azure OpenAI Responses API without server-side persistence).
-  if (model.compat?.supportsStore === false) {
-    return false;
-  }
   if (typeof model.api !== "string" || typeof model.provider !== "string") {
     return false;
   }
@@ -244,170 +168,23 @@ function shouldForceResponsesStore(model: {
   return isDirectOpenAIBaseUrl(model.baseUrl);
 }
 
-function parsePositiveInteger(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return Math.floor(value);
-  }
-  if (typeof value === "string") {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return undefined;
-}
-
-function resolveOpenAIResponsesCompactThreshold(model: { contextWindow?: unknown }): number {
-  const contextWindow = parsePositiveInteger(model.contextWindow);
-  if (contextWindow) {
-    return Math.max(1_000, Math.floor(contextWindow * 0.7));
-  }
-  return 80_000;
-}
-
-function shouldEnableOpenAIResponsesServerCompaction(
-  model: {
-    api?: unknown;
-    provider?: unknown;
-    baseUrl?: unknown;
-    compat?: { supportsStore?: boolean };
-  },
-  extraParams: Record<string, unknown> | undefined,
-): boolean {
-  const configured = extraParams?.responsesServerCompaction;
-  if (configured === false) {
-    return false;
-  }
-  if (!shouldForceResponsesStore(model)) {
-    return false;
-  }
-  if (configured === true) {
-    return true;
-  }
-  // Auto-enable for direct OpenAI Responses models.
-  return model.provider === "openai";
-}
-
-function createOpenAIResponsesContextManagementWrapper(
-  baseStreamFn: StreamFn | undefined,
-  extraParams: Record<string, unknown> | undefined,
-): StreamFn {
+function createOpenAIResponsesStoreWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
   const underlying = baseStreamFn ?? streamSimple;
   return (model, context, options) => {
-    const forceStore = shouldForceResponsesStore(model);
-    const useServerCompaction = shouldEnableOpenAIResponsesServerCompaction(model, extraParams);
-    if (!forceStore && !useServerCompaction) {
+    if (!shouldForceResponsesStore(model)) {
       return underlying(model, context, options);
     }
 
-    const compactThreshold =
-      parsePositiveInteger(extraParams?.responsesCompactThreshold) ??
-      resolveOpenAIResponsesCompactThreshold(model);
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
       onPayload: (payload) => {
         if (payload && typeof payload === "object") {
-          const payloadObj = payload as Record<string, unknown>;
-          if (forceStore) {
-            payloadObj.store = true;
-          }
-          if (useServerCompaction && payloadObj.context_management === undefined) {
-            payloadObj.context_management = [
-              {
-                type: "compaction",
-                compact_threshold: compactThreshold,
-              },
-            ];
-          }
+          (payload as { store?: unknown }).store = true;
         }
         originalOnPayload?.(payload);
       },
     });
-  };
-}
-
-function normalizeOpenAIServiceTier(value: unknown): OpenAIServiceTier | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (
-    normalized === "auto" ||
-    normalized === "default" ||
-    normalized === "flex" ||
-    normalized === "priority"
-  ) {
-    return normalized;
-  }
-  return undefined;
-}
-
-function resolveOpenAIServiceTier(
-  extraParams: Record<string, unknown> | undefined,
-): OpenAIServiceTier | undefined {
-  const raw = extraParams?.serviceTier ?? extraParams?.service_tier;
-  const normalized = normalizeOpenAIServiceTier(raw);
-  if (raw !== undefined && normalized === undefined) {
-    const rawSummary = typeof raw === "string" ? raw : typeof raw;
-    log.warn(`ignoring invalid OpenAI service tier param: ${rawSummary}`);
-  }
-  return normalized;
-}
-
-function createOpenAIServiceTierWrapper(
-  baseStreamFn: StreamFn | undefined,
-  serviceTier: OpenAIServiceTier,
-): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) => {
-    if (
-      model.api !== "openai-responses" ||
-      model.provider !== "openai" ||
-      !isOpenAIPublicApiBaseUrl(model.baseUrl)
-    ) {
-      return underlying(model, context, options);
-    }
-    const originalOnPayload = options?.onPayload;
-    return underlying(model, context, {
-      ...options,
-      onPayload: (payload) => {
-        if (payload && typeof payload === "object") {
-          const payloadObj = payload as Record<string, unknown>;
-          if (payloadObj.service_tier === undefined) {
-            payloadObj.service_tier = serviceTier;
-          }
-        }
-        originalOnPayload?.(payload);
-      },
-    });
-  };
-}
-
-function createCodexDefaultTransportWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) =>
-    underlying(model, context, {
-      ...options,
-      transport: options?.transport ?? "auto",
-    });
-}
-
-function createOpenAIDefaultTransportWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) => {
-    const typedOptions = options as
-      | (SimpleStreamOptions & { openaiWsWarmup?: boolean })
-      | undefined;
-    const mergedOptions = {
-      ...options,
-      transport: options?.transport ?? "auto",
-      // Warm-up is optional in OpenAI docs; enabled by default here for lower
-      // first-turn latency on WebSocket sessions. Set params.openaiWsWarmup=false
-      // to disable per model.
-      openaiWsWarmup: typedOptions?.openaiWsWarmup ?? true,
-    } as SimpleStreamOptions;
-    return underlying(model, context, mergedOptions);
   };
 }
 
@@ -499,25 +276,13 @@ function createAnthropicBetaHeadersWrapper(
 ): StreamFn {
   const underlying = baseStreamFn ?? streamSimple;
   return (model, context, options) => {
-    const isOauth = isAnthropicOAuthApiKey(options?.apiKey);
-    const requestedContext1m = betas.includes(ANTHROPIC_CONTEXT_1M_BETA);
-    const effectiveBetas =
-      isOauth && requestedContext1m
-        ? betas.filter((beta) => beta !== ANTHROPIC_CONTEXT_1M_BETA)
-        : betas;
-    if (isOauth && requestedContext1m) {
-      log.warn(
-        `ignoring context1m for OAuth token auth on ${model.provider}/${model.id}; Anthropic rejects context-1m beta with OAuth auth`,
-      );
-    }
-
     // Preserve the betas pi-ai's createClient would inject for the given token type.
     // Without this, our options.headers["anthropic-beta"] overwrites the pi-ai
     // defaultHeaders via Object.assign, stripping critical betas like oauth-2025-04-20.
-    const piAiBetas = isOauth
+    const piAiBetas = isAnthropicOAuthApiKey(options?.apiKey)
       ? (PI_AI_OAUTH_ANTHROPIC_BETAS as readonly string[])
       : (PI_AI_DEFAULT_ANTHROPIC_BETAS as readonly string[]);
-    const allBetas = [...new Set([...piAiBetas, ...effectiveBetas])];
+    const allBetas = [...new Set([...piAiBetas, ...betas])];
     return underlying(model, context, {
       ...options,
       headers: mergeAnthropicBetaHeader(options?.headers, allBetas),
@@ -588,258 +353,7 @@ function mapThinkingLevelToOpenRouterReasoningEffort(
   if (thinkingLevel === "off") {
     return "none";
   }
-  if (thinkingLevel === "adaptive") {
-    return "medium";
-  }
   return thinkingLevel;
-}
-
-function shouldApplySiliconFlowThinkingOffCompat(params: {
-  provider: string;
-  modelId: string;
-  thinkingLevel?: ThinkLevel;
-}): boolean {
-  return (
-    params.provider === "siliconflow" &&
-    params.thinkingLevel === "off" &&
-    params.modelId.startsWith("Pro/")
-  );
-}
-
-/**
- * SiliconFlow's Pro/* models reject string thinking modes (including "off")
- * with HTTP 400 invalid-parameter errors. Normalize to `thinking: null` to
- * preserve "thinking disabled" intent without sending an invalid enum value.
- */
-function createSiliconFlowThinkingWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) => {
-    const originalOnPayload = options?.onPayload;
-    return underlying(model, context, {
-      ...options,
-      onPayload: (payload) => {
-        if (payload && typeof payload === "object") {
-          const payloadObj = payload as Record<string, unknown>;
-          if (payloadObj.thinking === "off") {
-            payloadObj.thinking = null;
-          }
-        }
-        originalOnPayload?.(payload);
-      },
-    });
-  };
-}
-
-type MoonshotThinkingType = "enabled" | "disabled";
-
-function normalizeMoonshotThinkingType(value: unknown): MoonshotThinkingType | undefined {
-  if (typeof value === "boolean") {
-    return value ? "enabled" : "disabled";
-  }
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (
-      normalized === "enabled" ||
-      normalized === "enable" ||
-      normalized === "on" ||
-      normalized === "true"
-    ) {
-      return "enabled";
-    }
-    if (
-      normalized === "disabled" ||
-      normalized === "disable" ||
-      normalized === "off" ||
-      normalized === "false"
-    ) {
-      return "disabled";
-    }
-    return undefined;
-  }
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const typeValue = (value as Record<string, unknown>).type;
-    return normalizeMoonshotThinkingType(typeValue);
-  }
-  return undefined;
-}
-
-function resolveMoonshotThinkingType(params: {
-  configuredThinking: unknown;
-  thinkingLevel?: ThinkLevel;
-}): MoonshotThinkingType | undefined {
-  const configured = normalizeMoonshotThinkingType(params.configuredThinking);
-  if (configured) {
-    return configured;
-  }
-  if (!params.thinkingLevel) {
-    return undefined;
-  }
-  return params.thinkingLevel === "off" ? "disabled" : "enabled";
-}
-
-function isMoonshotToolChoiceCompatible(toolChoice: unknown): boolean {
-  if (toolChoice == null) {
-    return true;
-  }
-  if (toolChoice === "auto" || toolChoice === "none") {
-    return true;
-  }
-  if (typeof toolChoice === "object" && !Array.isArray(toolChoice)) {
-    const typeValue = (toolChoice as Record<string, unknown>).type;
-    return typeValue === "auto" || typeValue === "none";
-  }
-  return false;
-}
-
-/**
- * Moonshot Kimi supports native binary thinking mode:
- * - { thinking: { type: "enabled" } }
- * - { thinking: { type: "disabled" } }
- *
- * When thinking is enabled, Moonshot only accepts tool_choice auto|none.
- * Normalize incompatible values to auto instead of failing the request.
- */
-function createMoonshotThinkingWrapper(
-  baseStreamFn: StreamFn | undefined,
-  thinkingType?: MoonshotThinkingType,
-): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) => {
-    const originalOnPayload = options?.onPayload;
-    return underlying(model, context, {
-      ...options,
-      onPayload: (payload) => {
-        if (payload && typeof payload === "object") {
-          const payloadObj = payload as Record<string, unknown>;
-          let effectiveThinkingType = normalizeMoonshotThinkingType(payloadObj.thinking);
-
-          if (thinkingType) {
-            payloadObj.thinking = { type: thinkingType };
-            effectiveThinkingType = thinkingType;
-          }
-
-          if (
-            effectiveThinkingType === "enabled" &&
-            !isMoonshotToolChoiceCompatible(payloadObj.tool_choice)
-          ) {
-            payloadObj.tool_choice = "auto";
-          }
-        }
-        originalOnPayload?.(payload);
-      },
-    });
-  };
-}
-
-function isKimiCodingAnthropicEndpoint(model: {
-  api?: unknown;
-  provider?: unknown;
-  baseUrl?: unknown;
-}): boolean {
-  if (model.api !== "anthropic-messages") {
-    return false;
-  }
-
-  if (typeof model.provider === "string" && model.provider.trim().toLowerCase() === "kimi-coding") {
-    return true;
-  }
-
-  if (typeof model.baseUrl !== "string" || !model.baseUrl.trim()) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(model.baseUrl);
-    const host = parsed.hostname.toLowerCase();
-    const pathname = parsed.pathname.toLowerCase();
-    return host.endsWith("kimi.com") && pathname.startsWith("/coding");
-  } catch {
-    const normalized = model.baseUrl.toLowerCase();
-    return normalized.includes("kimi.com/coding");
-  }
-}
-
-function normalizeKimiCodingToolDefinition(tool: unknown): Record<string, unknown> | undefined {
-  if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
-    return undefined;
-  }
-
-  const toolObj = tool as Record<string, unknown>;
-  if (toolObj.function && typeof toolObj.function === "object") {
-    return toolObj;
-  }
-
-  const rawName = typeof toolObj.name === "string" ? toolObj.name.trim() : "";
-  if (!rawName) {
-    return toolObj;
-  }
-
-  const functionSpec: Record<string, unknown> = {
-    name: rawName,
-    parameters:
-      toolObj.input_schema && typeof toolObj.input_schema === "object"
-        ? toolObj.input_schema
-        : toolObj.parameters && typeof toolObj.parameters === "object"
-          ? toolObj.parameters
-          : { type: "object", properties: {} },
-  };
-
-  if (typeof toolObj.description === "string" && toolObj.description.trim()) {
-    functionSpec.description = toolObj.description;
-  }
-  if (typeof toolObj.strict === "boolean") {
-    functionSpec.strict = toolObj.strict;
-  }
-
-  return {
-    type: "function",
-    function: functionSpec,
-  };
-}
-
-function normalizeKimiCodingToolChoice(toolChoice: unknown): unknown {
-  if (!toolChoice || typeof toolChoice !== "object" || Array.isArray(toolChoice)) {
-    return toolChoice;
-  }
-
-  const choice = toolChoice as Record<string, unknown>;
-  if (choice.type === "any") {
-    return "required";
-  }
-  if (choice.type === "tool" && typeof choice.name === "string" && choice.name.trim()) {
-    return {
-      type: "function",
-      function: { name: choice.name.trim() },
-    };
-  }
-
-  return toolChoice;
-}
-
-/**
- * Kimi Coding's anthropic-messages endpoint expects OpenAI-style tool payloads
- * (`tools[].function`) even when messages use Anthropic request framing.
- */
-function createKimiCodingAnthropicToolSchemaWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) => {
-    const originalOnPayload = options?.onPayload;
-    return underlying(model, context, {
-      ...options,
-      onPayload: (payload) => {
-        if (payload && typeof payload === "object" && isKimiCodingAnthropicEndpoint(model)) {
-          const payloadObj = payload as Record<string, unknown>;
-          if (Array.isArray(payloadObj.tools)) {
-            payloadObj.tools = payloadObj.tools
-              .map((tool) => normalizeKimiCodingToolDefinition(tool))
-              .filter((tool): tool is Record<string, unknown> => !!tool);
-          }
-          payloadObj.tool_choice = normalizeKimiCodingToolChoice(payloadObj.tool_choice);
-        }
-        originalOnPayload?.(payload);
-      },
-    });
-  };
 }
 
 /**
@@ -869,130 +383,25 @@ function createOpenRouterWrapper(
           // only the nested one is sent.
           delete payloadObj.reasoning_effort;
 
-          // When thinking is "off", do not inject reasoning at all.
-          // Some models (e.g. deepseek/deepseek-r1) require reasoning and reject
-          // { effort: "none" } with "Reasoning is mandatory for this endpoint and
-          // cannot be disabled." Omitting the field lets each model use its own
-          // default reasoning behavior.
-          if (thinkingLevel !== "off") {
-            const existingReasoning = payloadObj.reasoning;
+          const existingReasoning = payloadObj.reasoning;
 
-            // OpenRouter treats reasoning.effort and reasoning.max_tokens as
-            // alternative controls. If max_tokens is already present, do not
-            // inject effort and do not overwrite caller-supplied reasoning.
-            if (
-              existingReasoning &&
-              typeof existingReasoning === "object" &&
-              !Array.isArray(existingReasoning)
-            ) {
-              const reasoningObj = existingReasoning as Record<string, unknown>;
-              if (!("max_tokens" in reasoningObj) && !("effort" in reasoningObj)) {
-                reasoningObj.effort = mapThinkingLevelToOpenRouterReasoningEffort(thinkingLevel);
-              }
-            } else if (!existingReasoning) {
-              payloadObj.reasoning = {
-                effort: mapThinkingLevelToOpenRouterReasoningEffort(thinkingLevel),
-              };
+          // OpenRouter treats reasoning.effort and reasoning.max_tokens as
+          // alternative controls. If max_tokens is already present, do not
+          // inject effort and do not overwrite caller-supplied reasoning.
+          if (
+            existingReasoning &&
+            typeof existingReasoning === "object" &&
+            !Array.isArray(existingReasoning)
+          ) {
+            const reasoningObj = existingReasoning as Record<string, unknown>;
+            if (!("max_tokens" in reasoningObj) && !("effort" in reasoningObj)) {
+              reasoningObj.effort = mapThinkingLevelToOpenRouterReasoningEffort(thinkingLevel);
             }
+          } else if (!existingReasoning) {
+            payloadObj.reasoning = {
+              effort: mapThinkingLevelToOpenRouterReasoningEffort(thinkingLevel),
+            };
           }
-        }
-        onPayload?.(payload);
-      },
-    });
-  };
-}
-
-/**
- * Models on OpenRouter that do not support the `reasoning.effort` parameter.
- * Injecting it causes "Invalid arguments passed to the model" errors.
- */
-function isOpenRouterReasoningUnsupported(modelId: string): boolean {
-  const id = modelId.toLowerCase();
-  return id.startsWith("x-ai/");
-}
-
-function isGemini31Model(modelId: string): boolean {
-  const normalized = modelId.toLowerCase();
-  return normalized.includes("gemini-3.1-pro") || normalized.includes("gemini-3.1-flash");
-}
-
-function mapThinkLevelToGoogleThinkingLevel(
-  thinkingLevel: ThinkLevel,
-): "MINIMAL" | "LOW" | "MEDIUM" | "HIGH" | undefined {
-  switch (thinkingLevel) {
-    case "minimal":
-      return "MINIMAL";
-    case "low":
-      return "LOW";
-    case "medium":
-    case "adaptive":
-      return "MEDIUM";
-    case "high":
-    case "xhigh":
-      return "HIGH";
-    default:
-      return undefined;
-  }
-}
-
-function sanitizeGoogleThinkingPayload(params: {
-  payload: unknown;
-  modelId?: string;
-  thinkingLevel?: ThinkLevel;
-}): void {
-  if (!params.payload || typeof params.payload !== "object") {
-    return;
-  }
-  const payloadObj = params.payload as Record<string, unknown>;
-  const config = payloadObj.config;
-  if (!config || typeof config !== "object") {
-    return;
-  }
-  const configObj = config as Record<string, unknown>;
-  const thinkingConfig = configObj.thinkingConfig;
-  if (!thinkingConfig || typeof thinkingConfig !== "object") {
-    return;
-  }
-  const thinkingConfigObj = thinkingConfig as Record<string, unknown>;
-  const thinkingBudget = thinkingConfigObj.thinkingBudget;
-  if (typeof thinkingBudget !== "number" || thinkingBudget >= 0) {
-    return;
-  }
-
-  // pi-ai can emit thinkingBudget=-1 for some Gemini 3.1 IDs; a negative budget
-  // is invalid for Google-compatible backends and can lead to malformed handling.
-  delete thinkingConfigObj.thinkingBudget;
-
-  if (
-    typeof params.modelId === "string" &&
-    isGemini31Model(params.modelId) &&
-    params.thinkingLevel &&
-    params.thinkingLevel !== "off" &&
-    thinkingConfigObj.thinkingLevel === undefined
-  ) {
-    const mappedLevel = mapThinkLevelToGoogleThinkingLevel(params.thinkingLevel);
-    if (mappedLevel) {
-      thinkingConfigObj.thinkingLevel = mappedLevel;
-    }
-  }
-}
-
-function createGoogleThinkingPayloadWrapper(
-  baseStreamFn: StreamFn | undefined,
-  thinkingLevel?: ThinkLevel,
-): StreamFn {
-  const underlying = baseStreamFn ?? streamSimple;
-  return (model, context, options) => {
-    const onPayload = options?.onPayload;
-    return underlying(model, context, {
-      ...options,
-      onPayload: (payload) => {
-        if (model.api === "google-generative-ai") {
-          sanitizeGoogleThinkingPayload({
-            payload,
-            modelId: model.id,
-            thinkingLevel,
-          });
         }
         onPayload?.(payload);
       },
@@ -1046,21 +455,12 @@ export function applyExtraParamsToAgent(
   modelId: string,
   extraParamsOverride?: Record<string, unknown>,
   thinkingLevel?: ThinkLevel,
-  agentId?: string,
 ): void {
   const extraParams = resolveExtraParams({
     cfg,
     provider,
     modelId,
-    agentId,
   });
-  if (provider === "openai-codex") {
-    // Default Codex to WebSocket-first when nothing else specifies transport.
-    agent.streamFn = createCodexDefaultTransportWrapper(agent.streamFn);
-  } else if (provider === "openai") {
-    // Default OpenAI Responses to WebSocket-first with transparent SSE fallback.
-    agent.streamFn = createOpenAIDefaultTransportWrapper(agent.streamFn);
-  }
   const override =
     extraParamsOverride && Object.keys(extraParamsOverride).length > 0
       ? Object.fromEntries(
@@ -1083,50 +483,10 @@ export function applyExtraParamsToAgent(
     agent.streamFn = createAnthropicBetaHeadersWrapper(agent.streamFn, anthropicBetas);
   }
 
-  if (shouldApplySiliconFlowThinkingOffCompat({ provider, modelId, thinkingLevel })) {
-    log.debug(
-      `normalizing thinking=off to thinking=null for SiliconFlow compatibility (${provider}/${modelId})`,
-    );
-    agent.streamFn = createSiliconFlowThinkingWrapper(agent.streamFn);
-  }
-
-  if (provider === "moonshot") {
-    const moonshotThinkingType = resolveMoonshotThinkingType({
-      configuredThinking: merged?.thinking,
-      thinkingLevel,
-    });
-    if (moonshotThinkingType) {
-      log.debug(
-        `applying Moonshot thinking=${moonshotThinkingType} payload wrapper for ${provider}/${modelId}`,
-      );
-    }
-    agent.streamFn = createMoonshotThinkingWrapper(agent.streamFn, moonshotThinkingType);
-  }
-
-  agent.streamFn = createKimiCodingAnthropicToolSchemaWrapper(agent.streamFn);
-
   if (provider === "openrouter") {
     log.debug(`applying OpenRouter app attribution headers for ${provider}/${modelId}`);
-    // "auto" is a dynamic routing model — we don't know which underlying model
-    // OpenRouter will select, and it may be a reasoning-required endpoint.
-    // Omit the thinkingLevel so we never inject `reasoning.effort: "none"`,
-    // which would cause a 400 on models where reasoning is mandatory.
-    // Users who need reasoning control should target a specific model ID.
-    // See: openclaw/openclaw#24851
-    //
-    // x-ai/grok models do not support OpenRouter's reasoning.effort parameter
-    // and reject payloads containing it with "Invalid arguments passed to the
-    // model." Skip reasoning injection for these models.
-    // See: openclaw/openclaw#32039
-    const skipReasoningInjection = modelId === "auto" || isOpenRouterReasoningUnsupported(modelId);
-    const openRouterThinkingLevel = skipReasoningInjection ? undefined : thinkingLevel;
-    agent.streamFn = createOpenRouterWrapper(agent.streamFn, openRouterThinkingLevel);
+    agent.streamFn = createOpenRouterWrapper(agent.streamFn, thinkingLevel);
     agent.streamFn = createOpenRouterSystemCacheWrapper(agent.streamFn);
-  }
-
-  if (provider === "amazon-bedrock" && !isAnthropicBedrockModel(modelId)) {
-    log.debug(`disabling prompt caching for non-Anthropic Bedrock model ${provider}/${modelId}`);
-    agent.streamFn = createBedrockNoCacheWrapper(agent.streamFn);
   }
 
   // Enable Z.AI tool_stream for real-time tool call streaming.
@@ -1139,18 +499,8 @@ export function applyExtraParamsToAgent(
     }
   }
 
-  // Guard Google payloads against invalid negative thinking budgets emitted by
-  // upstream model-ID heuristics for Gemini 3.1 variants.
-  agent.streamFn = createGoogleThinkingPayloadWrapper(agent.streamFn, thinkingLevel);
-
-  const openAIServiceTier = resolveOpenAIServiceTier(merged);
-  if (openAIServiceTier) {
-    log.debug(`applying OpenAI service_tier=${openAIServiceTier} for ${provider}/${modelId}`);
-    agent.streamFn = createOpenAIServiceTierWrapper(agent.streamFn, openAIServiceTier);
-  }
-
   // Work around upstream pi-ai hardcoding `store: false` for Responses API.
-  // Force `store=true` for direct OpenAI Responses models and auto-enable
-  // server-side compaction for compatible OpenAI Responses payloads.
-  agent.streamFn = createOpenAIResponsesContextManagementWrapper(agent.streamFn, merged);
+  // Force `store=true` for direct OpenAI/OpenAI Codex providers so multi-turn
+  // server-side conversation state is preserved.
+  agent.streamFn = createOpenAIResponsesStoreWrapper(agent.streamFn);
 }
