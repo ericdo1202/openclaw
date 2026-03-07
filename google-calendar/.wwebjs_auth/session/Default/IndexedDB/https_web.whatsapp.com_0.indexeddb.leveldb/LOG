@@ -1,0 +1,28 @@
+2026/03/07-13:11:30.245 a15944 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/07-13:11:30.245 a15944 Recovering log #202
+2026/03/07-13:11:30.270 a15944 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000202.log 
+2026/03/07-13:11:39.142 a15944 Level-0 table #215: started
+2026/03/07-13:11:39.154 a15944 Level-0 table #215: 1359114 bytes OK
+2026/03/07-13:11:39.156 a15944 Delete type=0 #202
+2026/03/07-13:11:44.331 a15944 Compacting 1@1 + 9@2 files
+2026/03/07-13:11:44.362 a15944 Generated table #216@1: 45886 keys, 2179186 bytes
+2026/03/07-13:11:44.399 a15944 Generated table #217@1: 111995 keys, 2266127 bytes
+2026/03/07-13:11:44.432 a15944 Generated table #218@1: 60453 keys, 2224877 bytes
+2026/03/07-13:11:44.441 a15944 Generated table #219@1: 2236 keys, 2143312 bytes
+2026/03/07-13:11:44.452 a15944 Generated table #220@1: 2264 keys, 2153747 bytes
+2026/03/07-13:11:44.463 a15944 Generated table #221@1: 1947 keys, 2158988 bytes
+2026/03/07-13:11:44.483 a15944 Generated table #222@1: 14145 keys, 2197771 bytes
+2026/03/07-13:11:44.514 a15944 Generated table #223@1: 27834 keys, 2255707 bytes
+2026/03/07-13:11:44.528 a15944 Generated table #224@1: 9329 keys, 910475 bytes
+2026/03/07-13:11:44.528 a15944 Compacted 1@1 + 9@2 files => 18490190 bytes
+2026/03/07-13:11:44.531 a15944 compacted to: files[ 0 0 9 0 0 0 0 ]
+2026/03/07-13:11:44.531 a15944 Delete type=2 #215
+2026/03/07-13:11:44.531 a15944 Delete type=2 #205
+2026/03/07-13:11:44.531 a15944 Delete type=2 #211
+2026/03/07-13:11:44.531 a15944 Delete type=2 #210
+2026/03/07-13:11:44.531 a15944 Delete type=2 #204
+2026/03/07-13:11:44.531 a15944 Delete type=2 #212
+2026/03/07-13:11:44.531 a15944 Delete type=2 #206
+2026/03/07-13:11:44.531 a15944 Delete type=2 #207
+2026/03/07-13:11:44.532 a15944 Delete type=2 #209
+2026/03/07-13:11:44.532 a15944 Delete type=2 #208
