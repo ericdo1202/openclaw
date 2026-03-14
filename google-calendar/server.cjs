@@ -172,6 +172,9 @@ whatsappClient.on('message', async msg => {
 
     console.log(`WhatsApp new message from ${from}: ${msgBody}`);
 
+    // Luôn ghi nhớ Chat ID cuối cùng để nếu có Clash thì nhắn về đúng người này
+    pendingWhatsAppChatId = msg.from;
+
     // Skip own messages and status broadcasts
     if (msg.fromMe || from === 'status@broadcast') {
       return;
@@ -184,9 +187,6 @@ whatsappClient.on('message', async msg => {
     }
 
     console.log(`WhatsApp: Schedule keyword matched, sending email...`);
-
-    // Store chat ID for sending calendar link back later
-    pendingWhatsAppChatId = msg.from;
 
     // Reply immediately
     await msg.reply('⏳ Creating calendar event, please wait...');
@@ -279,6 +279,44 @@ app.post('/gmail-webhook', (req, res) => {
   }
 });
 
+// ==================== Internal API: Send WhatsApp ====================
+// Used by independent scripts (like timetable checking) to send alerts
+app.post('/send-whatsapp', async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    
+    // Mặc định gửi cho chính mình nếu không biết gửi cho ai (ví cả Script chạy ngầm)
+    let chatId = pendingWhatsAppChatId;
+
+    if (!chatId) {
+        // Nếu không có chat ID treo sẵn, thử tìm chat cuối cùng hoặc gửi cho chính mình
+        if (whatsappClient.info && whatsappClient.info.wid) {
+            chatId = whatsappClient.info.wid._serialized;
+        } else {
+            // Trường hợp hy hữu: Lấy chat đầu tiên trong danh sách
+            const chats = await whatsappClient.getChats();
+            if (chats && chats.length > 0) {
+                chatId = chats[0].id._serialized;
+            }
+        }
+    }
+
+    if (!chatId) {
+      return res.status(503).json({ error: 'WhatsApp client not ready or no chat found' });
+    }
+
+    await whatsappClient.sendMessage(chatId, message);
+    console.log(`[Internal API] Sent message to ${chatId}: ${message.replace(/\n/g, ' ')}`);
+    res.json({ success: true, to: chatId });
+  } catch (error) {
+    console.error('[Internal API] Error sending WhatsApp message:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -291,9 +329,9 @@ app.get('/health', (req, res) => {
 
 // ==================== Start Server ====================
 const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`\n🚀 Server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Server running on http://0.0.0.0:${PORT}`);
   console.log('📧 Gmail webhook: POST /gmail-webhook');
-  console.log('💬 WhatsApp: waiting for QR scan');
+  console.log('💬 WhatsApp: Status check - /health');
   console.log('🏥 Health check: GET /health\n');
 });

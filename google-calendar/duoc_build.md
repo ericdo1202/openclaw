@@ -33,3 +33,6 @@ package.json
 ) Library này hỗ trợ pairing code bằng số phone — chỉ cần nhập số, nó gửi code về WhatsApp, bạn confirm là xong. Không cần QR.
 
 Bạn muốn tôi chuyển sang dùng baileys không? Nó cũng ổn định hơn với Node.js mới vì không cần Puppeteer/Chromium.
+
+5. For check time sheet
+node timetable_watcher.cjs

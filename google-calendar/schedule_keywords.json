@@ -6,5 +6,10 @@
   "appointment",
   "event",
   "book",
-  "reserve"
+  "reserve",
+  "lịch",
+  "hẹn",
+  "lớp",
+  "dạy",
+  "học"
 ]

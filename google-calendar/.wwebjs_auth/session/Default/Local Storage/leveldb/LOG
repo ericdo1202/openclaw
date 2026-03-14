@@ -1,3 +1,6 @@
-2026/03/07-13:11:29.101 a15946 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/Local Storage/leveldb/MANIFEST-000001
-2026/03/07-13:11:29.102 a15946 Recovering log #3
-2026/03/07-13:11:29.103 a15946 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/Local Storage/leveldb/000003.log 
+2026/03/14-17:32:12.319 119af50 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/Local Storage/leveldb/MANIFEST-000001
+2026/03/14-17:32:12.343 119af50 Recovering log #7
+2026/03/14-17:32:12.349 119af50 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/Local Storage/leveldb/000007.log 
+2026/03/14-17:34:14.401 119af4d Level-0 table #11: started
+2026/03/14-17:34:14.410 119af4d Level-0 table #11: 14925 bytes OK
+2026/03/14-17:34:14.415 119af4d Delete type=0 #7
