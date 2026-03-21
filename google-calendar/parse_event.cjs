@@ -14,7 +14,8 @@
 
 // ==================== CONFIG ====================
 const MODE = 'mock'; // Change to 'ai' when ready
-const TZ = '+07:00';
+const CONFIG = require('./config.json');
+const TZ = CONFIG.TIMEZONE_OFFSET;
 
 // ==================== HELPERS ====================
 function pad(n) { return String(n).padStart(2, '0'); }

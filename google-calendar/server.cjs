@@ -5,10 +5,19 @@ const qrcode = require('qrcode-terminal');
 const path = require('path');
 
 // ==================== Config ====================
-const MY_EMAIL = 'dovanduoc1204@gmail.com';
+// ADMIN_EMAIL hiện được cấu hình trong config.json
 
 // ==================== Schedule Keywords ====================
 const { matchesScheduleKeyword } = require('./check_keyword.cjs');
+
+// ==================== Timetable Watcher (Trigger-based Logic) ====================
+const { checkTimetableClashes } = require('./timetable_clash_checker.cjs');
+
+// Database (Load 1 lần lúc start, hoặc đọc từ file JSON thật tuỳ ý)
+const USERS_DB = require('./users_db.json');
+const CONFIG = require('./config.json');
+
+
 
 // ==================== Shell Escape ====================
 function shellEscape(str) {
@@ -25,7 +34,7 @@ let pendingWhatsAppChatId = null;
 // ==================== Debounce / Lock for script ====================
 let scriptRunning = false;
 let scriptPending = false;
-const DEBOUNCE_MS = 5000;
+const DEBOUNCE_MS = CONFIG.SCRIPT_DEBOUNCE_MS;
 let debounceTimer = null;
 
 function runScriptDebounced(source) {
@@ -43,7 +52,7 @@ function runScriptDebounced(source) {
     scriptRunning = true;
     const scriptPath = path.resolve(__dirname, './poll_email_to_calendar.sh');
     console.log(`[${source}] Running script: ${scriptPath}`);
-
+    // Shell script tự đọc config.json, không cần truyền tham số
     exec(`bash "${scriptPath}"`, { cwd: __dirname, timeout: 60000 }, (err, stdout, stderr) => {
       scriptRunning = false;
 
@@ -168,25 +177,86 @@ whatsappClient.on('ready', () => {
 whatsappClient.on('message', async msg => {
   try {
     const from = msg.from || 'unknown';
-    const msgBody = msg.body || '';
+    let msgBody = msg.body || '';
 
-    console.log(`WhatsApp new message from ${from}: ${msgBody}`);
+    // Bản cập nhật mới của WhatsApp (Multi-Device) đôi khi dùng định dạng @lid thay vì @c.us
+    // Nên chúng ta dùng hàm getContact() để truy ngược ra số điện thoại thật của người đó.
+    let realPhoneStr = from;
+    try {
+      const contact = await msg.getContact();
+      if (contact && contact.number) {
+        realPhoneStr = contact.number + '@c.us';
+      }
+    } catch (err) {
+      console.log('Cannot get contact:', err.message);
+    }
 
-    // Luôn ghi nhớ Chat ID cuối cùng để nếu có Clash thì nhắn về đúng người này
-    pendingWhatsAppChatId = msg.from;
+    console.log(`WhatsApp new message from ${from} (Resolved: ${realPhoneStr}): ${msgBody}`);
 
-    // Skip own messages and status broadcasts
-    if (msg.fromMe || from === 'status@broadcast') {
+    // Lùi dòng gán Chat ID xuống dưới để không bị lưu nhầm ID của người lạ
+
+    // ==================== [NEW] DEDICATED BOT (MULTI-TENANT) ====================
+    // Lấy thông tin user từ Database dựa theo số điện thoại (chấp nhận cả 2 định dạng)
+    let userInfo = USERS_DB.find(u => u.phone === realPhoneStr || u.phone === from);
+
+    if (!userInfo) {
+      console.log(`WhatsApp: Ignoring message from stranger ${realPhoneStr} (Not found in users_db.json)`);
+      return; 
+    }
+
+    // ==================== [NEW] AUTO SEEN (Hiện Tích Xanh) ====================
+    try {
+      const chat = await msg.getChat();
+      if (chat.sendSeen) {
+        await chat.sendSeen();
+      }
+    } catch (err) {
+      console.log("Cannot mark as seen:", err.message);
+    }
+    // =========================================================================
+
+    // Bỏ qua tin nhắn từ Group Chat (Đề phòng SIM rác bj add vào group)
+
+    if (from.includes('@g.us')) {
       return;
     }
+    // =========================================================================
+
+    // ==================== [NEW] Manual Check Clash via WhatsApp ====================
+    if (CONFIG.WHATSAPP_CLASH_CHECK_KEYWORDS.some(kw => msgBody.toLowerCase().includes(kw))) {
+      console.log(`WhatsApp: Manual clash check requested by ${realPhoneStr} (Sheet: ${userInfo.sheetId})`);
+      await msg.reply(`🔍 Checking Google Sheets (${userInfo.name}) for any timetable clashes...`);
+      
+      // Truyền tham số thứ 3 (isManualCheck = true) để nó nhả Full báo cáo
+      const result = await checkTimetableClashes(userInfo.sheetId, realPhoneStr, true);
+      
+      if (result.error) {
+        await msg.reply(`❌ Error checking Excel: ${result.error.message || result.error}`);
+      } else if (result.allMessages && result.allMessages.length > 0) {
+        // Tin nhắn báo cáo (Đã được gộp chuẩn Header/Footer bên trong Logic)
+        for (const report of result.allMessages) {
+          await msg.reply(report);
+          console.log(`[WhatsApp Reply] Sent report to ${realPhoneStr}`);
+        }
+      } else {
+        await msg.reply('✅ The current spreadsheet is clean, NO timetable clashes found!');
+      }
+      return;
+    }
+
+    // ===============================================================================
 
     // Check keyword using shared function
     if (!matchesScheduleKeyword(msgBody)) {
-      console.log(`WhatsApp: Ignoring non-schedule message from ${from}`);
+      console.log(`WhatsApp: Ignoring non-schedule message from ${realPhoneStr}`);
       return;
     }
 
-    console.log(`WhatsApp: Schedule keyword matched, sending email...`);
+    console.log(`WhatsApp: Schedule keyword matched, processing request from ${realPhoneStr}...`);
+
+    // CHỈ lưu Chat ID khi tin nhắn hợp lệ và thực sự ra lệnh lên lịch
+    // Lưu lại cái ID nguyên bản (from) để lúc reply API không bị lỗi mạng
+    pendingWhatsAppChatId = from;
 
     // Reply immediately
     await msg.reply('⏳ Creating calendar event, please wait...');
@@ -210,7 +280,7 @@ whatsappClient.on('disconnected', reason => {
 });
 
 // Initialize with retry logic
-const MAX_RETRIES = 3;
+const MAX_RETRIES = CONFIG.WHATSAPP_MAX_RETRIES;
 async function initWhatsApp(attempt = 1) {
   try {
     console.log(`WhatsApp: Initializing (attempt ${attempt}/${MAX_RETRIES})...`);
@@ -238,7 +308,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // ==================== Gmail Webhook ====================
 let lastProcessedHistoryId = 0;
 
-app.post('/gmail-webhook', (req, res) => {
+app.post(CONFIG.API_ROUTES.GMAIL_WEBHOOK, (req, res) => {
   // ACK immediately (Google requires fast response)
   res.sendStatus(200);
 
@@ -281,28 +351,20 @@ app.post('/gmail-webhook', (req, res) => {
 
 // ==================== Internal API: Send WhatsApp ====================
 // Used by independent scripts (like timetable checking) to send alerts
-app.post('/send-whatsapp', async (req, res) => {
+app.post(CONFIG.API_ROUTES.SEND_WHATSAPP, async (req, res) => {
   try {
     const { message } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
     
-    // Mặc định gửi cho chính mình nếu không biết gửi cho ai (ví cả Script chạy ngầm)
-    let chatId = pendingWhatsAppChatId;
+    let chatId = req.body.targetPhone || pendingWhatsAppChatId;
 
     if (!chatId) {
-        // Nếu không có chat ID treo sẵn, thử tìm chat cuối cùng hoặc gửi cho chính mình
-        if (whatsappClient.info && whatsappClient.info.wid) {
-            chatId = whatsappClient.info.wid._serialized;
-        } else {
-            // Trường hợp hy hữu: Lấy chat đầu tiên trong danh sách
-            const chats = await whatsappClient.getChats();
-            if (chats && chats.length > 0) {
-                chatId = chats[0].id._serialized;
-            }
-        }
+        // Trường hợp Fallback (Rất chắp vá nếu xài cho nhiều Users)
+        chatId = CONFIG.FALLBACK_WHATSAPP_NUMBER; 
     }
+
 
     if (!chatId) {
       return res.status(503).json({ error: 'WhatsApp client not ready or no chat found' });
@@ -317,8 +379,41 @@ app.post('/send-whatsapp', async (req, res) => {
   }
 });
 
+// ==================== Webhook: Trigger Clash Check ====================
+// This endpoint is for manual Excel triggers (via Google Apps Script onEdit)
+app.post(CONFIG.API_ROUTES.CHECK_TIMETABLE_CLASHES, async (req, res) => {
+  const incomingSheetId = (req && req.body && req.body.sheetId) || null; // Sẽ được truyền qua Apps Script
+
+  console.log(`Got trigger from Excel modification (Sheet: ${incomingSheetId || 'Unknown'}), running clash check...`);
+  res.json({ success: true, message: 'Checking sheet for clashes...' });
+  
+  try {
+    if (incomingSheetId) {
+      // Tìm số điện thoại của người sở hữu Sheet ID này trong Database
+      const targetUser = USERS_DB.find(u => u.sheetId === incomingSheetId);
+      
+      if (targetUser) {
+        await checkTimetableClashes(incomingSheetId, targetUser.phone);
+      } else {
+        console.error(`[Webhook] No user found configured with Sheet ID: ${incomingSheetId}`);
+      }
+    } else {
+      // Fallback cho hàm cũ
+      // Tìm user đầu tiên trong DB để test nếu không có request body
+      const firstUser = USERS_DB[0];
+      if (firstUser) {
+        await checkTimetableClashes(firstUser.sheetId, firstUser.phone);
+      }
+    }
+  } catch (err) {
+    console.error('Check triggered error:', err.message);
+  }
+});
+
+
+
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get(CONFIG.API_ROUTES.HEALTH_CHECK, (req, res) => {
   res.json({
     status: 'ok',
     uptime: process.uptime(),
@@ -328,10 +423,9 @@ app.get('/health', (req, res) => {
 });
 
 // ==================== Start Server ====================
-const PORT = 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 Server running on http://0.0.0.0:${PORT}`);
-  console.log('📧 Gmail webhook: POST /gmail-webhook');
-  console.log('💬 WhatsApp: Status check - /health');
-  console.log('🏥 Health check: GET /health\n');
+app.listen(CONFIG.SERVER_PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Server running on http://0.0.0.0:${CONFIG.SERVER_PORT}`);
+  console.log(`📧 Gmail webhook: POST ${CONFIG.API_ROUTES.GMAIL_WEBHOOK}`);
+  console.log(`📊 Excel Trigger (onEdit): POST ${CONFIG.API_ROUTES.CHECK_TIMETABLE_CLASHES}`);
+  console.log(`🏥 Health check: GET ${CONFIG.API_ROUTES.HEALTH_CHECK}\n`);
 });

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "tenant_001",
+    "name": "School Admin",
+    "phone": "84393198913@c.us",
+    "sheetId": "1DwZeCkYZEfFQuJqFGBMCaF-JBxyg3LdIe_1BSo_2Rpo"
+  },
+  {
+    "id": "tenant_002",
+    "name": "School Admin2",
+    "phone": "84123456789@c.us",
+    "sheetId": "SAMPLE_SHEET_ID_2"
+  }
+]

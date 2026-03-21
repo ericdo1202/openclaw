@@ -34,5 +34,21 @@ package.json
 
 Bạn muốn tôi chuyển sang dùng baileys không? Nó cũng ổn định hơn với Node.js mới vì không cần Puppeteer/Chromium.
 
-5. For check time sheet
-node timetable_watcher.cjs
+5. Kiểm tra trùng lịch (Clash Check)
+Có 2 cách:
+* Cách 1 (Polling 30s/lần): `node timetable_watcher.cjs` (Tự động quét định kỳ)
+* Cách 2 (Triggered by Sheets): Đã tích hợp sẵn trong `server.cjs` tại endpoint `/check-timetable-clashes`. 
+  Bạn cần cài đặt Apps Script trên Google Sheets để kích hoạt bộ lọc này ngay khi sửa file:
+  - Trên Google Sheets chọn **Extensions** -> **Apps Script**.
+  - Dán đoạn mã sau vào và lưu lại:
+    ```javascript
+    function clashCheckOnEdit(e) {
+      // Thay url này bằng link ngrok mà bạn nhận được ở bước 2 
+      // (VD: https://a1b2c3d4.ngrok-free.app/check-timetable-clashes)
+      var url = "https://lymphocytotic-lustered-laci.ngrok-free.dev/check-timetable-clashes";
+      
+      try {
+        UrlFetchApp.fetch(url, { "method": "post", "muteHttpExceptions": true });
+      } catch (err) {}
+    }
+    ```

@@ -7,7 +7,8 @@
  */
 
 const path = require('path');
-const KEYWORDS = require(path.join(__dirname, 'schedule_keywords.json'));
+const CONFIG = require(path.join(__dirname, 'config.json'));
+const KEYWORDS = CONFIG.EMAIL_SCHEDULE_KEYWORDS;
 
 function matchesScheduleKeyword(text) {
   const lower = (text || '').toLowerCase();

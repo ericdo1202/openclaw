@@ -1,23 +1,57 @@
 const { execSync } = require('child_process');
 
-// Tạm thời để trống. Bạn sẽ dán ID của file Online Sheet vào đây
-// Ví dụ: const SHEET_ID = '1234abcd5678efgh...';
-const SHEET_ID = process.env.SHEET_ID || '1DwZeCkYZEfFQuJqFGBMCaF-JBxyg3LdIe_1BSo_2Rpo';
-const RANGE = 'Sheet1!A:E';
+// Các hàm trong file này sẽ nhận sheetId truyền vào từ Database
+const CONFIG = require('./config.json');
+const RANGE = CONFIG.GOOGLE_SHEET_DATA_RANGE;
+
 
 function parseDate(isoString) {
   if (!isoString) return NaN;
-  // Sửa lỗi nếu người dùng nhập thiếu số 0 (VD: T5:00:00 -> T05:00:00)
-  let processed = isoString;
-  if (processed.includes('T')) {
-    const [date, time] = processed.split('T');
-    if (time && /^\d:/.test(time)) {
-      processed = `${date}T0${time}`;
-    }
+
+  let s = isoString.trim();
+
+  // Loại bỏ dấu ':' thừa ở cuối (VD: "9:00:" → "9:00")
+  s = s.replace(/:+$/, '');
+
+  // Tự động thêm chữ 'T' nếu nhập dạng date space time (VD: "2026-03-24 09:00" -> "2026-03-24T09:00")
+  if (!s.includes('T') && s.includes(' ')) {
+    s = s.replace(/\s+/, 'T');
   }
-  const timestamp = new Date(processed).getTime();
+
+  // Tách phần date và phần time (nối bởi chữ 'T')
+  if (s.includes('T')) {
+    let [datePart, timePart] = s.split('T');
+
+    // --- Pad phần DATE: 2026-3-5 → 2026-03-05 ---
+    const dateSegments = datePart.split('-');
+    if (dateSegments.length === 3) {
+      datePart = dateSegments[0] + '-' +
+        dateSegments[1].padStart(2, '0') + '-' +
+        dateSegments[2].padStart(2, '0');
+    }
+
+    // --- Pad phần TIME: 9:5:0 → 09:05:00 ---
+    // Tách timezone offset ra (nếu có): +07:00 hoặc -05:00 hoặc Z
+    let tzSuffix = '';
+    const tzMatch = timePart.match(/([+-]\d{1,2}:\d{2}|Z)$/);
+    if (tzMatch) {
+      tzSuffix = tzMatch[0];
+      timePart = timePart.slice(0, -tzSuffix.length);
+    }
+
+    const timeSegments = timePart.split(':');
+    const paddedTime = timeSegments.map(seg => seg.padStart(2, '0')).join(':');
+
+    // Nếu thiếu phút hoặc giây, bổ sung cho đủ HH:MM:SS
+    const fullTime = paddedTime.split(':');
+    while (fullTime.length < 3) fullTime.push('00');
+
+    s = datePart + 'T' + fullTime.join(':') + tzSuffix;
+  }
+
+  const timestamp = new Date(s).getTime();
   if (isNaN(timestamp)) {
-    console.warn(`[Manager] Warning: Invalid date format: "${isoString}"`);
+    console.warn(`[Manager] Warning: Invalid date format: "${isoString}" (after normalize: "${s}")`);
   }
   return timestamp;
 }
@@ -25,13 +59,13 @@ function parseDate(isoString) {
 /**
  * Kiểm tra xem giáo viên có kẹt lịch không
  */
-function checkClash(teacherName, newStartIso, newEndIso) {
+function checkClash(teacherName, newStartIso, newEndIso, sheetId) {
     try {
-        if (SHEET_ID === 'PLEASE_ENTER_YOUR_SHEET_ID_HERE') {
-            return { error: true, message: "Bạn chưa nhập SHEET_ID vào file timetable_manager.cjs" };
+        if (!sheetId) {
+            return { error: true, message: "Thiếu sheetId" };
         }
 
-        const cmd = `gog sheets get ${SHEET_ID} "${RANGE}" --json`;
+        const cmd = `gog sheets get ${sheetId} "${RANGE}" --json`;
         const output = execSync(cmd, { encoding: 'utf8' });
         const data = JSON.parse(output);
         
@@ -116,11 +150,13 @@ function initSheetHeaders() {
 /**
  * Tìm tất cả các vụ trùng lịch, nhóm theo giáo viên
  */
-function findAllClashes() {
+function findAllClashes(sheetId) {
     try {
-        if (SHEET_ID === 'PLEASE_ENTER_YOUR_SHEET_ID_HERE') return { error: "Missing SHEET_ID" };
-
-        const cmd = `gog sheets get ${SHEET_ID} "${RANGE}" --json`;
+        if (!sheetId) {
+            return { error: true, message: "Thiếu sheetId" };
+        }
+        
+        const cmd = `gog sheets get ${sheetId} "${RANGE}" --json`;
         const output = execSync(cmd, { encoding: 'utf8' });
         const data = JSON.parse(output);
         const rows = data.values;
@@ -214,5 +250,6 @@ module.exports = {
     checkClash,
     appendEvent,
     initSheetHeaders,
-    findAllClashes
+    findAllClashes,
+    parseDate
 };

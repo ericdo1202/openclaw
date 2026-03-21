@@ -1,3 +1,12 @@
-2026/03/14-17:32:14.406 119af4c Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/03/14-17:32:14.406 119af4c Recovering log #424
-2026/03/14-17:32:14.428 119af4c Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000424.log 
+2026/03/21-21:01:59.386 4ed858 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/21-21:01:59.386 4ed858 Recovering log #23
+2026/03/21-21:01:59.428 4ed858 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/google-calendar/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000023.log 
+2026/03/21-21:03:46.340 4ed857 Level-0 table #28: started
+2026/03/21-21:03:46.360 4ed857 Level-0 table #28: 1489989 bytes OK
+2026/03/21-21:03:46.362 4ed857 Delete type=0 #23
+2026/03/21-21:03:46.365 4ed857 Compacting 1@1 + 1@2 files
+2026/03/21-21:03:46.395 4ed857 Generated table #29@1: 54992 keys, 1950851 bytes
+2026/03/21-21:03:46.395 4ed857 Compacted 1@1 + 1@2 files => 1950851 bytes
+2026/03/21-21:03:46.397 4ed857 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/03/21-21:03:46.397 4ed857 Delete type=2 #28
+2026/03/21-21:03:46.397 4ed857 Delete type=2 #25

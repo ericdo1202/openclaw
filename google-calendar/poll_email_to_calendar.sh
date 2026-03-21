@@ -9,9 +9,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-QUERY="label:Timetable"
-MAX_EMAILS=10
-TZ="+07:00"
+# Đọc toàn bộ config 1 lần duy nhất từ config.json
+eval "$(node -e "
+  const c = require('$SCRIPT_DIR/config.json');
+  console.log('CONFIG_LABEL=' + JSON.stringify(c.GMAIL_TRIGGER_LABEL));
+  console.log('MAX_EMAILS=' + c.GMAIL_MAX_EMAILS_PER_POLL);
+  console.log('TZ=' + JSON.stringify(c.TIMEZONE_OFFSET));
+  console.log('GMAIL_ACCOUNT=' + JSON.stringify(c.GMAIL_ACCOUNT));
+")"
+QUERY="label:$CONFIG_LABEL"
 
 # Schedule keyword check — uses shared check_keyword.js (same logic as server.cjs)
 matches_schedule_keyword() {

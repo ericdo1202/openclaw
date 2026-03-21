@@ -1,0 +1,34 @@
+{
+  "SERVER_PORT": 3000,
+  "FALLBACK_WHATSAPP_NUMBER": "84393198913@c.us",
+  "GMAIL_ACCOUNT": "dovanduoc1204@gmail.com",
+  "GMAIL_TRIGGER_LABEL": "Timetable",
+  "GMAIL_MAX_EMAILS_PER_POLL": 10,
+  "TIMEZONE_OFFSET": "+07:00",
+  "SCRIPT_DEBOUNCE_MS": 5000,
+  "WHATSAPP_MAX_RETRIES": 3,
+  "WHATSAPP_CLASH_CHECK_KEYWORDS": ["check clash", "kiểm tra trùng", "trùng lịch"],
+  "EMAIL_SCHEDULE_KEYWORDS": [
+    "schedule",
+    "calendar",
+    "timetable",
+    "meeting",
+    "appointment",
+    "event",
+    "book",
+    "reserve",
+    "lịch",
+    "hẹn",
+    "lớp",
+    "dạy",
+    "học"
+  ],
+  "GOOGLE_SHEET_DATA_RANGE": "Sheet1!A:E",
+  "TIMETABLE_WATCHER_INTERVAL_MS": 10000,
+  "API_ROUTES": {
+    "SEND_WHATSAPP": "/send-whatsapp",
+    "CHECK_TIMETABLE_CLASHES": "/check-timetable-clashes",
+    "GMAIL_WEBHOOK": "/gmail-webhook",
+    "HEALTH_CHECK": "/health"
+  }
+}
