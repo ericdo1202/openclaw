@@ -1,0 +1,6 @@
+Teacher,Day,Start,End,GroupId,Class,Week,Room
+GV An,T2,08:00,09:00,,10A1,All,P101
+GV Bình,T2,08:00,09:00,,10A2,All,P102
+GV Chi,T2,09:00,10:00,,10A1,All,P101
+GV An,T2,10:00,11:00,,10B3,All,LAB-01
+GV Bình,T3,08:00,09:00,,10A2,All,P102

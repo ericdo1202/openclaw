@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart-Timetable | Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0f172a">
+</head>
+<body>
+    <div class="bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <aside class="sidebar no-print">
+        <div class="logo">
+            <span class="icon">⚡</span>
+            <h1>Smart-Timetable</h1>
+        </div>
+        <nav>
+            <ul>
+                <li class="active"><a href="#" onclick="showSection('overview')">Tổng quan</a></li>
+                <li><a href="#" onclick="showSection('timetable')">Bảng TKB</a></li>
+                <li><a href="#" onclick="showSection('rooms')">Phòng học</a></li>
+                <li><a href="#" onclick="showSection('remote')">Điều khiển Bot</a></li>
+            </ul>
+        </nav>
+        <div class="sidebar-footer">
+            <button class="btn btn-primary" onclick="window.print()">🖨️ In báo cáo</button>
+        </div>
+    </aside>
+
+    <main class="content">
+        <header class="top-bar no-print">
+            <h2 id="section-title">Tổng quan hệ thống</h2>
+            <div class="user-profile">
+                <span id="school-name">Đang tải...</span>
+                <div class="avatar">A</div>
+            </div>
+        </header>
+
+        <section id="overview" class="section active">
+            <div class="stats-grid">
+                <div class="card glass">
+                    <h3>Tổng số tiết</h3>
+                    <p class="stat-value" id="stat-total-slots">0</p>
+                </div>
+                <div class="card glass">
+                    <h3>Giáo viên hoạt động</h3>
+                    <p class="stat-value" id="stat-teachers">0</p>
+                </div>
+                <div class="card glass">
+                    <h3>Hiệu suất phòng</h3>
+                    <p class="stat-value" id="stat-rooms">0%</p>
+                </div>
+            </div>
+
+            <div class="recent-clashes card glass">
+                <h3>Thống kê tải trọng GV</h3>
+                <div id="workload-chart" class="chart-container">
+                    <!-- Data will be injected here -->
+                </div>
+            </div>
+        </section>
+
+        <section id="timetable" class="section">
+            <div class="controls no-print">
+                <input type="text" id="tkb-search" placeholder="Tìm theo lớp hoặc giáo viên..." oninput="filterTimetable()">
+                <select id="tkb-view-type">
+                    <option value="class">Xem theo Lớp</option>
+                    <option value="teacher">Xem theo Giáo viên</option>
+                </select>
+            </div>
+            <div class="card glass table-wrapper">
+                <table id="main-timetable">
+                    <thead>
+                        <!-- Headings will be injected -->
+                    </thead>
+                    <tbody>
+                        <!-- Data will be injected -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="remote" class="section">
+            <div class="remote-grid">
+                <div class="card glass">
+                    <div class="card-icon">🚀</div>
+                    <h3>Xếp lịch tự động</h3>
+                    <p>Chạy thuật toán tìm phương án tối ưu nhất.</p>
+                    <button class="btn btn-primary" onclick="sendCommand('generate best')">Bắt đầu ngay</button>
+                </div>
+                <div class="card glass">
+                    <div class="card-icon">🛠</div>
+                    <h3>Kiểm tra logic</h3>
+                    <p>Quét toàn bộ dữ liệu để tìm xung đột.</p>
+                    <button class="btn btn-primary" onclick="sendCommand('check')">Quét lỗi</button>
+                </div>
+                <div class="card glass">
+                    <div class="card-icon">📅</div>
+                    <h3>Đồng bộ Calendar</h3>
+                    <p>Đẩy dữ liệu lên Google Calendar.</p>
+                    <button class="btn btn-primary" onclick="sendCommand('sync')">Đồng bộ</button>
+                </div>
+                <div class="card glass">
+                    <div class="card-icon">🔄</div>
+                    <h3>Lưu bản sao</h3>
+                    <p>Xuất file Excel và Snapshot hệ thống.</p>
+                    <button class="btn btn-primary" onclick="sendCommand('save')">Lưu ngay</button>
+                </div>
+            </div>
+            
+            <div id="remote-result" class="card glass" style="margin-top: 2rem; display: none;">
+                <h4>Kết quả xử lý</h4>
+                <div id="remote-log" style="font-family: monospace; white-space: pre-wrap; margin-top: 1rem; font-size: 0.9rem;"></div>
+            </div>
+        </section>
+    </main>
+
+    <div class="loading-overlay" id="loading">
+        <div class="loader"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

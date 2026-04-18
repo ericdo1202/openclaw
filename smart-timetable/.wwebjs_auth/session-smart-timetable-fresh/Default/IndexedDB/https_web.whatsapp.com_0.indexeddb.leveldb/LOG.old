@@ -1,0 +1,26 @@
+2026/04/18-18:33:12.415 522d9b Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/18-18:33:12.423 522d9b Recovering log #311
+2026/04/18-18:33:12.445 522d9b Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000311.log 
+2026/04/18-18:34:03.772 522d9e Level-0 table #323: started
+2026/04/18-18:34:03.790 522d9e Level-0 table #323: 1395378 bytes OK
+2026/04/18-18:34:03.793 522d9e Delete type=0 #311
+2026/04/18-18:34:14.894 522d9e Compacting 1@1 + 8@2 files
+2026/04/18-18:34:14.942 522d9e Generated table #324@1: 86942 keys, 2235534 bytes
+2026/04/18-18:34:14.963 522d9e Generated table #325@1: 29861 keys, 2236233 bytes
+2026/04/18-18:34:14.974 522d9e Generated table #326@1: 1680 keys, 2163857 bytes
+2026/04/18-18:34:14.997 522d9e Generated table #327@1: 24126 keys, 2212653 bytes
+2026/04/18-18:34:15.015 522d9e Generated table #328@1: 8042 keys, 2167486 bytes
+2026/04/18-18:34:15.040 522d9e Generated table #329@1: 78613 keys, 2221483 bytes
+2026/04/18-18:34:15.072 522d9e Generated table #330@1: 116519 keys, 2270085 bytes
+2026/04/18-18:34:15.092 522d9e Generated table #331@1: 63722 keys, 1310109 bytes
+2026/04/18-18:34:15.092 522d9e Compacted 1@1 + 8@2 files => 16817440 bytes
+2026/04/18-18:34:15.093 522d9e compacted to: files[ 0 0 8 0 0 0 0 ]
+2026/04/18-18:34:15.093 522d9e Delete type=2 #314
+2026/04/18-18:34:15.094 522d9e Delete type=2 #315
+2026/04/18-18:34:15.094 522d9e Delete type=2 #317
+2026/04/18-18:34:15.094 522d9e Delete type=2 #316
+2026/04/18-18:34:15.094 522d9e Delete type=2 #313
+2026/04/18-18:34:15.094 522d9e Delete type=2 #320
+2026/04/18-18:34:15.094 522d9e Delete type=2 #323
+2026/04/18-18:34:15.094 522d9e Delete type=2 #318
+2026/04/18-18:34:15.094 522d9e Delete type=2 #319

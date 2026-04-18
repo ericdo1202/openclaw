@@ -1,0 +1,20 @@
+{
+  "SERVER_PORT": 3001,
+  "SHEET_RANGES": {
+    "TIMETABLE": "Timetable!A:H",
+    "TEACHERS": "Teachers!A:E",
+    "CONSTRAINTS": "Constraints!A:E",
+    "BANDED_GROUPS": "BandedGroups!A:D",
+    "DEPLOYMENT": "Deployment!A:E",
+    "ABSENCE": "Absence!A:D",
+    "ROOMS": "Rooms!A:D",
+    "RELIEF_LOG": "ReliefLog!A:E",
+    "RECESS": "Recess!A:D",
+    "BOOKINGS": "Bookings!A:E"
+  },
+  "WHATSAPP": {
+    "SESSION_ID": "smart-timetable-fresh",
+    "CHECK_KEYWORDS": ["check", "kiểm tra", "clash"]
+  },
+  "FALLBACK_WHATSAPP_NUMBER": null
+}

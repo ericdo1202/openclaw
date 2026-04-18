@@ -1,0 +1,141 @@
+const { execSync } = require('child_process');
+const CONFIG = require('./config.json');
+
+/**
+ * ReliefManager: Logic for finding covering teachers (Relief)
+ */
+class ReliefManager {
+    constructor(sheetsClient, validationEngine) {
+        this.sheets = sheetsClient;
+        this.validator = validationEngine;
+        this.gogPath = CONFIG.GOG_PATH || '/opt/homebrew/bin/gog';
+    }
+
+    /**
+     * FIND RELIEF TEACHER FOR A SPECIFIC DATE
+     */
+    async planRelief(dateInput, mappingDay = null) {
+        // 1. Lấy dữ liệu
+        const absenceRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.ABSENCE);
+        const timetableRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.TIMETABLE);
+        const teachersRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.TEACHERS);
+        const constraintsRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.CONSTRAINTS);
+
+        const absences = absenceRaw.slice(1).filter(r => r[0] === dateInput);
+        const timetable = timetableRaw.slice(1);
+        const teachersList = teachersRaw.slice(1);
+        const constraints = constraintsRaw.slice(1);
+        const logRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.RELIEF_LOG);
+        const reliefLog = logRaw.slice(1);
+
+        // Đếm số lần dạy thay của từng GV
+        const reliefCounts = {};
+        reliefLog.forEach(row => {
+            const teacher = row[3]; // ReliefTeacher ở cột D
+            reliefCounts[teacher] = (reliefCounts[teacher] || 0) + 1;
+        });
+
+        if (absences.length === 0) return { success: true, message: `No teachers reported absent for ${dateInput}.` };
+
+        const reliefPlan = [];
+
+        // 2. Với mỗi giáo viên vắng mặt
+        for (const abs of absences) {
+            const absentTeacher = abs[1];
+            // NÂNG CẤP: Nếu có mappingDay, lấy lịch dạy của ngày đó thay vì ngày vắng
+            const timetableDay = mappingDay || this.getDayOfWeek(dateInput); 
+            const missingSlots = timetable.filter(r => r[0] === absentTeacher && r[1] === timetableDay);
+
+            for (const slot of missingSlots) {
+                const [ , day, start, end, , className] = slot;
+
+                // 3. Tìm GV thay thế "Sạch"
+                let candidates = await Promise.all(teachersList.filter(t => t[0] !== absentTeacher).map(async (t) => {
+                    const name = t[0];
+                    const email = t[4]; // Cột Email (0-indexed 4)
+                    
+                    const isBusyClass = timetable.some(r => r[0] === name && r[1] === day && r[2] === start);
+                    const isBusyConstraint = constraints.some(c => 
+                        c[0] === name && c[1] === day && 
+                        this.validator.timeToMin(start) < this.validator.timeToMin(c[3]) && 
+                        this.validator.timeToMin(end) > this.validator.timeToMin(c[2])
+                    );
+
+                    if (isBusyClass || isBusyConstraint) return null;
+
+                    // --- NÂNG CẤP: KIỂM TRA GOOGLE CALENDAR (COMPLIANCE) ---
+                    const hasCalendarConflict = await this.checkCalendarConflict(email, dateInput, start);
+                    if (hasCalendarConflict) {
+                        console.log(`[Relief] 📅 Skipping ${name} due to Google Calendar conflict.`);
+                        return null;
+                    }
+
+                    return { name, count: reliefCounts[name] || 0 };
+                }));
+
+                candidates = candidates.filter(c => c !== null);
+
+                // Ưu tiên người ít tiết dạy thay nhất (Priority)
+                candidates.sort((a, b) => a.count - b.count);
+                const bestCandidate = candidates[0]; 
+
+                reliefPlan.push({
+                    date: dateInput,
+                    absentTeacher,
+                    className,
+                    slot: `${day} ${start}-${end}`,
+                    reliefTeacher: bestCandidate ? bestCandidate.name : "❌ NO AVAILABLE TEACHER (Conflict)"
+                });
+            }
+        }
+
+        return { success: true, plan: reliefPlan };
+    }
+
+    /**
+     * Kiểm tra xung đột sự kiện trên Google Calendar
+     */
+    async checkCalendarConflict(email, dateInput, startTime) {
+        if (!email || email === "N/A" || !email.includes('@')) return false;
+
+        try {
+            // Giả định dateInput là T2, T3... ta cần chuyển thành ISO DATE thực tế (dùng tạm ngày hôm nay cho logic CLI)
+            // Trong thực tế, hệ thống sẽ ánh xạ T2 -> ngày thứ 2 gần nhất
+            const dummyISO = new Date().toISOString().split('T')[0];
+            const checkTime = `${dummyISO}T${startTime}:00Z`;
+            
+            // Lệnh gog check conflicts
+            const cmd = `${this.gogPath} calendar conflicts --from "${checkTime}" --to "${checkTime}" -a "${email}" --json`;
+            const result = JSON.parse(execSync(cmd, { encoding: 'utf-8' }));
+            
+            // Nếu có event overlapping, result sẽ chứa danh sách
+            return Array.isArray(result) && result.length > 0;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
+     * SAVE RELIEF PLAN TO SHEETS LOG
+     */
+    async saveReliefPlan(plan) {
+        const logData = plan
+            .filter(p => !p.reliefTeacher.includes("❌"))
+            .map(p => [p.date, p.absentTeacher, p.className, p.reliefTeacher, p.slot]);
+
+        if (logData.length === 0) return;
+
+        const currentLog = await this.sheets.getRange(CONFIG.SHEET_RANGES.RELIEF_LOG);
+        const finalLog = currentLog.concat(logData);
+        await this.sheets.updateRange(CONFIG.SHEET_RANGES.RELIEF_LOG, finalLog);
+    }
+
+    getDayOfWeek(dateStr) {
+        // Hàm này giả định logic chuyển đổi ngày sang T2, T3...
+        // Để đơn giản, giả sử input dateStr chính là "T2", "T3"... 
+        // Trong thực tế sẽ dùng library moment hoặc date-fns.
+        return dateStr; 
+    }
+}
+
+module.exports = ReliefManager;
