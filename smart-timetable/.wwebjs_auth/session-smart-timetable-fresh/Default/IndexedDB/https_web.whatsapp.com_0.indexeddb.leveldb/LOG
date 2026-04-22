@@ -1,26 +1,3 @@
-2026/04/18-18:49:22.212 52834c Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/04/18-18:49:22.212 52834c Recovering log #322
-2026/04/18-18:49:22.214 52834c Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000322.log 
-2026/04/18-19:07:43.222 52834e Level-0 table #334: started
-2026/04/18-19:07:43.240 52834e Level-0 table #334: 1372663 bytes OK
-2026/04/18-19:07:43.243 52834e Delete type=0 #322
-2026/04/18-19:07:43.382 52834c Compacting 1@1 + 8@2 files
-2026/04/18-19:07:43.415 52834c Generated table #335@1: 86956 keys, 2236794 bytes
-2026/04/18-19:07:43.434 52834c Generated table #336@1: 34648 keys, 2240536 bytes
-2026/04/18-19:07:43.444 52834c Generated table #337@1: 1730 keys, 2145580 bytes
-2026/04/18-19:07:43.467 52834c Generated table #338@1: 22878 keys, 2206576 bytes
-2026/04/18-19:07:43.484 52834c Generated table #339@1: 9407 keys, 2175500 bytes
-2026/04/18-19:07:43.508 52834c Generated table #340@1: 67688 keys, 2206822 bytes
-2026/04/18-19:07:43.540 52834c Generated table #341@1: 116281 keys, 2267361 bytes
-2026/04/18-19:07:43.563 52834c Generated table #342@1: 76903 keys, 1567546 bytes
-2026/04/18-19:07:43.563 52834c Compacted 1@1 + 8@2 files => 17046715 bytes
-2026/04/18-19:07:43.565 52834c compacted to: files[ 0 0 8 0 0 0 0 ]
-2026/04/18-19:07:43.565 52834c Delete type=2 #328
-2026/04/18-19:07:43.565 52834c Delete type=2 #329
-2026/04/18-19:07:43.565 52834c Delete type=2 #334
-2026/04/18-19:07:43.565 52834c Delete type=2 #327
-2026/04/18-19:07:43.565 52834c Delete type=2 #326
-2026/04/18-19:07:43.565 52834c Delete type=2 #324
-2026/04/18-19:07:43.565 52834c Delete type=2 #330
-2026/04/18-19:07:43.565 52834c Delete type=2 #331
-2026/04/18-19:07:43.565 52834c Delete type=2 #325
+2026/04/22-21:28:22.428 4e5904 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/22-21:28:22.428 4e5904 Recovering log #420
+2026/04/22-21:28:22.433 4e5904 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000420.log 

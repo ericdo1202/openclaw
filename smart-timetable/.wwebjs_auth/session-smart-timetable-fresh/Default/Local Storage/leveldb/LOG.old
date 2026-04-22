@@ -1,3 +1,6 @@
-2026/04/18-18:33:11.493 522de0 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/Local Storage/leveldb/MANIFEST-000001
-2026/04/18-18:33:11.495 522de0 Recovering log #16
-2026/04/18-18:33:11.495 522de0 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/Local Storage/leveldb/000016.log 
+2026/04/22-21:21:52.925 4e2eec Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/Local Storage/leveldb/MANIFEST-000001
+2026/04/22-21:21:52.927 4e2eec Recovering log #19
+2026/04/22-21:21:52.928 4e2eec Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/Local Storage/leveldb/000019.log 
+2026/04/22-21:22:52.936 4e2eef Level-0 table #23: started
+2026/04/22-21:22:52.949 4e2eef Level-0 table #23: 15941 bytes OK
+2026/04/22-21:22:52.955 4e2eef Delete type=0 #19
