@@ -229,6 +229,47 @@ class ValidationEngine {
         });
         return issues;
     }
+    /**
+     * 8. Check Department Whitespace / PLT Slots
+     * Ensures teachers in the same department have common whitespace (PLT slots)
+     */
+    async checkDepartmentWhitespace(departments, timetable) {
+        const issues = [];
+        // Structure of departments: [DepartmentName, Teachers (comma separated), MinCommonSlots]
+        
+        departments.forEach(dept => {
+            const deptName = dept[0];
+            if (!dept[1]) return;
+            const teachers = dept[1].split(',').map(s => s.trim());
+            const minSlots = parseInt(dept[2]) || 1;
+
+            if (teachers.length < 2) return; // Need at least 2 teachers for common whitespace
+
+            // A simplified check: Find how many common free slots exist for ALL teachers in this department
+            const days = ["T2", "T3", "T4", "T5", "T6"];
+            const timeSlots = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+            
+            let commonFreeSlots = 0;
+
+            for (const day of days) {
+                for (const slot of timeSlots) {
+                    // Check if ALL teachers in this dept are free in this slot
+                    const allFree = teachers.every(teacher => {
+                        return !timetable.some(r => r[0] === teacher && r[1] === day && r[2] === slot);
+                    });
+                    
+                    if (allFree) commonFreeSlots++;
+                }
+            }
+
+            if (commonFreeSlots < minSlots) {
+                issues.push(`Department ${deptName}: Not enough common whitespace (PLT slots). Required: ${minSlots}, Found: ${commonFreeSlots}`);
+            }
+        });
+        
+        return issues;
+    }
+
     async validateAll() {
         const timetable = await this.sheets.getRange(CONFIG.SHEET_RANGES.TIMETABLE);
         const teachers = await this.sheets.getRange(CONFIG.SHEET_RANGES.TEACHERS);
@@ -256,6 +297,17 @@ class ValidationEngine {
         const deploymentRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.DEPLOYMENT);
         const deployIssues = await this.checkDeploymentLogic(deploymentRaw.slice(1), gRows);
 
+        // Kiểm tra PLT Slots / Department Whitespace
+        let deptIssues = [];
+        try {
+            const departmentsRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.DEPARTMENTS);
+            if (departmentsRaw && departmentsRaw.length > 1) {
+                deptIssues = await this.checkDepartmentWhitespace(departmentsRaw.slice(1), tRows);
+            }
+        } catch (e) {
+            console.log("[Validation] Skipping department check (tab not found or error).");
+        }
+
         return {
             success: 
                 clashes.length === 0 && 
@@ -264,14 +316,16 @@ class ValidationEngine {
                 bandErrors.length === 0 && 
                 roomErrors.length === 0 && 
                 recessErrors.length === 0 &&
-                deployIssues.length === 0,
+                deployIssues.length === 0 &&
+                deptIssues.length === 0,
             clashes,
             loadErrors,
             constraintErrors,
             bandErrors,
             roomErrors,
             recessErrors,
-            deployIssues
+            deployIssues,
+            deptIssues
         };
     }
 }

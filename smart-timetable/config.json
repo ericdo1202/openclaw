@@ -10,7 +10,8 @@
     "ROOMS": "Rooms!A:D",
     "RELIEF_LOG": "ReliefLog!A:E",
     "RECESS": "Recess!A:D",
-    "BOOKINGS": "Bookings!A:E"
+    "BOOKINGS": "Bookings!A:E",
+    "DEPARTMENTS": "Departments!A:D"
   },
   "WHATSAPP": {
     "SESSION_ID": "smart-timetable-fresh",

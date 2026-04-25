@@ -130,6 +130,50 @@ class ReliefManager {
         await this.sheets.updateRange(CONFIG.SHEET_RANGES.RELIEF_LOG, finalLog);
     }
 
+    /**
+     * BÁO CÁO TỔNG HỢP RELIEF THEO GV / THÁNG
+     */
+    async generateSummaryReport(period) {
+        const logRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.RELIEF_LOG);
+        const log = logRaw.slice(1);
+
+        if (log.length === 0) return "ℹ️ No relief records found.";
+
+        // Tổng hợp theo GV
+        const byTeacher = {};
+        const byMonth = {};
+
+        log.forEach(row => {
+            const [date, absent, className, reliefTeacher, slot] = row;
+            // Đếm theo GV dạy thay
+            if (reliefTeacher) {
+                byTeacher[reliefTeacher] = (byTeacher[reliefTeacher] || 0) + 1;
+            }
+            // Đếm theo tháng (giả sử date format: YYYY-MM-DD hoặc T2, T3...)
+            const month = date && date.includes('-') ? date.substring(0, 7) : date;
+            if (!byMonth[month]) byMonth[month] = 0;
+            byMonth[month]++;
+        });
+
+        let report = "📊 *RELIEF SUMMARY REPORT*\n──────────────────\n\n";
+
+        // By Teacher
+        report += "*Relief Count by Teacher:*\n";
+        const sorted = Object.entries(byTeacher).sort((a, b) => b[1] - a[1]);
+        sorted.forEach(([name, count]) => {
+            report += `  👤 ${name}: ${count} slots\n`;
+        });
+
+        // By Month
+        report += "\n*Relief Count by Period:*\n";
+        Object.entries(byMonth).forEach(([month, count]) => {
+            report += `  📅 ${month}: ${count} slots\n`;
+        });
+
+        report += `\n*Total:* ${log.length} relief slots recorded.`;
+        return report;
+    }
+
     getDayOfWeek(dateStr) {
         // Hàm này giả định logic chuyển đổi ngày sang T2, T3...
         // Để đơn giản, giả sử input dateStr chính là "T2", "T3"... 

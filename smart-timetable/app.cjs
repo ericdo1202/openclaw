@@ -67,9 +67,9 @@ async function start() {
         }
 
         // Admin-only protection
-        const adminOnlyCommands = ['check', 'sync', 'generate', 'relief', 'save', 'history', 'stats', 'clone', 'register'];
+        const adminOnlyCommands = ['check', 'sync', 'generate', 'relief', 'save', 'history', 'stats', 'clone', 'register', 'params'];
         if (role === 'TEACHER' && adminOnlyCommands.includes(command)) {
-            return `❌ Hello ${teacherName}, the command "${command}" is for Admins only. You can use: schedule, rooms.`;
+            return `❌ Hello ${teacherName}, the command "${command}" is for Admins only. You can use: schedule, rooms, export.`;
         }
 
         const sheets = new SheetsClient(sheetId);
@@ -94,6 +94,34 @@ async function start() {
                 return `✅ New Sheet ID registered successfully!\n🆔 ID: ${newSheetId}\nThe system will use this file from now on.`;
             }
 
+            if (command === 'params') {
+                let report = "⚙️ *CURRENT CONTROL PARAMETERS*\n──────────────────\n\n";
+                const constraintsRaw = await sheets.getRange(CONFIG.SHEET_RANGES.CONSTRAINTS);
+                const constraints = constraintsRaw.slice(1);
+                report += "*1. Blocked Slots (Constraints):*\n";
+                if (constraints.length === 0) report += "  (No blocked slots set)\n";
+                constraints.forEach(c => { report += `  • ${c[0]} | ${c[1]} ${c[2]}-${c[3]} | ${c[4] || 'N/A'}\n`; });
+
+                const bandsRaw = await sheets.getRange(CONFIG.SHEET_RANGES.BANDED_GROUPS);
+                const bands = bandsRaw.slice(1);
+                report += "\n*2. Banded Groups:*\n";
+                if (bands.length === 0) report += "  (No banded groups)\n";
+                bands.forEach(b => { report += `  • Group ${b[0]}: ${b[1]} | Teachers: ${b[2]} | Classes: ${b[3]}\n`; });
+
+                const recessRaw = await sheets.getRange(CONFIG.SHEET_RANGES.RECESS);
+                const recesses = recessRaw.slice(1);
+                report += "\n*3. Recess Breaks:*\n";
+                if (recesses.length === 0) report += "  (No recess breaks set)\n";
+                recesses.forEach(r => { report += `  • ${r[0]}: ${r[1]}-${r[2]} (${r[3] || 'Break'})\n`; });
+
+                return report + "\n👉 Edit these directly in Google Sheets.";
+            }
+
+            if (command === 'export') {
+                const downloadUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+                return `📥 *EXPORT TO MS EXCEL*\n──────────────────\n\nClick the link below to download:\n\n${downloadUrl}\n\n_Includes all sheets: Timetable, Teachers, Deployment, etc._`;
+            }
+
             if (command === 'check') {
                 const result = await validator.validateAll();
                 if (result.success) return "✅ Perfect! No timetable conflicts detected.";
@@ -105,6 +133,7 @@ async function start() {
                 if (result.roomErrors.length > 0) report += "🏠 *ROOM CONFLICTS:*\n" + result.roomErrors.map(s => `• ${s}`).join('\n') + "\n\n";
                 if (result.recessErrors && result.recessErrors.length > 0) report += "☕ *RECESS VIOLATIONS:*\n" + result.recessErrors.map(s => `• ${s}`).join('\n') + "\n\n";
                 if (result.deployIssues && result.deployIssues.length > 0) report += "🚫 *DEPLOYMENT ISSUES:*\n" + result.deployIssues.map(s => `• ${s}`).join('\n') + "\n\n";
+                if (result.deptIssues && result.deptIssues.length > 0) report += "👥 *DEPARTMENT PLT ISSUES:*\n" + result.deptIssues.map(s => `• ${s}`).join('\n') + "\n\n";
                 return report + "👉 Please check your Sheets!";
             }
 
@@ -112,6 +141,47 @@ async function start() {
                 const sync = new CalendarSync(sheets);
                 await sync.syncAllTeachers();
                 return "✅ Google Calendar synchronization completed for all teachers!";
+            }
+
+            if (command === 'import') {
+                return `📥 *IMPORT DATA FROM EXCEL*\n──────────────────\n\n_Hãy đính kèm file Excel (.xlsx) hoặc CSV vào tin nhắn này và gửi cho bot._\n\n*Hệ thống sẽ tự động cập nhật dữ liệu!*`;
+            }
+
+            if (command === 'swap') {
+                const [teacher, day1, time1, day2, time2] = (args || "").split(/\s+/);
+                if (!teacher || !day1 || !time1 || !day2 || !time2) {
+                    return "🔄 *MANUAL SWAP (Edit)*\n──────────────────\n\n👉 *Cú pháp:* \nswap [Teacher] [Day1] [Time1] [Day2] [Time2]\n\n👉 *Ví dụ:*\n`swap Mr.John T2 08:00 T3 09:00`\n\n_Dùng để hoán đổi 2 tiết dạy của giáo viên._";
+                }
+
+                const timetableRaw = await sheets.getRange(CONFIG.SHEET_RANGES.TIMETABLE);
+                const timetable = timetableRaw.slice(1);
+                
+                const slot1Idx = timetable.findIndex(r => r[0] === teacher && r[1] === day1 && r[2] === time1);
+                const slot2Idx = timetable.findIndex(r => r[0] === teacher && r[1] === day2 && r[2] === time2);
+
+                if (slot1Idx === -1 && slot2Idx === -1) return `❌ Không tìm thấy lịch dạy nào của ${teacher} ở cả 2 thời điểm.`;
+
+                // Tiến hành đổi chỗ
+                let msg = `✅ Đã hoán đổi thành công cho ${teacher}:\n`;
+                if (slot1Idx !== -1) {
+                    timetable[slot1Idx][1] = day2;
+                    timetable[slot1Idx][2] = time2;
+                    msg += `• Từ ${day1} ${time1} → ${day2} ${time2}\n`;
+                }
+                if (slot2Idx !== -1) {
+                    timetable[slot2Idx][1] = day1;
+                    timetable[slot2Idx][2] = time1;
+                    msg += `• Từ ${day2} ${time2} → ${day1} ${time1}\n`;
+                }
+
+                // Ghi lại
+                await sheets.updateRange(CONFIG.SHEET_RANGES.TIMETABLE, [timetableRaw[0], ...timetable]);
+                return msg + "\n👉 Nhớ chạy lệnh *check* để đảm bảo không bị trùng giờ sau khi đổi nhé!";
+            }
+
+            if (command === 'pdf') {
+                const downloadUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=pdf&portrait=false`;
+                return `📄 *EXPORT TO PDF*\n──────────────────\n\nClick the link below to download your printable PDF report:\n\n${downloadUrl}`;
             }
 
             if (command === 'schedule') {
@@ -160,8 +230,19 @@ async function start() {
             if (command === 'relief') {
                 const manager = new ReliefManager(sheets, validator);
                 const isConfirm = args.includes('confirm');
-                const cleanArgs = args.replace('confirm', '').trim();
+                const isAdvance = args.includes('advance');
+                const isReport = args.includes('report');
+                const cleanArgs = args.replace('confirm', '').replace('advance', '').replace('report', '').trim();
                 const [date, mappingDay] = cleanArgs.split(/\s+/);
+
+                if (isReport) {
+                    return await manager.generateSummaryReport(date);
+                }
+
+                if (isAdvance && !date) {
+                    return `📅 *ADVANCE RELIEF PLANNING*\n──────────────────\n\n_Lên kế hoạch dạy thay cho ngày trong tương lai._\n\n*Cách dùng:*\nrelief advance [Ngày_Vắng] [Ngày_TKB]\n\n*Ví dụ:*\n• \`relief advance T4\` → Lập kế hoạch cho Thứ 4\n• \`relief advance T4 T3\` → Vắng Thứ 4, dùng TKB Thứ 3\n\n👉 Sau khi xem kế hoạch, gõ *relief confirm [Ngày]* để gửi tin báo cho GV.`;
+                }
+
                 const targetDay = date || "T2";
                 const result = await manager.planRelief(targetDay, mappingDay);
                 if (!result.plan || result.plan.length === 0) return result.message || "No relief plan needed.";

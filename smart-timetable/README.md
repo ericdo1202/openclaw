@@ -1,117 +1,148 @@
-# Smart-Timetable: Hệ thống Quản lý Thời khóa biểu & Dạy thay Thông minh
+# Smart-Timetable System
 
-Smart-Timetable là một giải pháp tự động hóa toàn diện cho việc quản lý lịch dạy, kiểm tra xung đột và lập kế hoạch dạy thay, được điều khiển trực tiếp thông qua giao diện WhatsApp.
-
----
-
-## 🚀 Tính năng nổi bật
-
-- **Bot WhatsApp Đa Người Dùng**: Phân quyền thông minh cho Admin và Giáo viên.
-- **Xác thực Thông minh (Smart Auth)**: Tự động nhận diện thiết bị gửi (Mobile/Web) thông qua số điện thoại chuẩn.
-- **Kiểm tra Trùng lịch (Clash Detection)**: Tự động phát hiện các lỗi trùng tiết, quá tải hoặc vi phạm tiết chặn.
-- **Lập kế hoạch Dạy thay (Relief Planning)**: Tự động tìm kiếm giáo viên thay thế dựa trên lịch trống và thông báo qua WhatsApp.
-- **Tích hợp Google Calendar**: Đồng bộ lịch trực tiếp để kiểm tra sự kiện trường học trước khi phân công dạy thay.
-- **Báo cáo & Thống kê**: Tóm tắt tải trọng giáo viên và hiệu suất sử dụng phòng học.
+Hệ thống quản lý và xếp thời khóa biểu tự động (AI Timetabling System) điều khiển hoàn toàn qua **WhatsApp**, tích hợp trực tiếp với **Google Sheets** và **Google Calendar**.
 
 ---
 
-## 🛠 Yêu cầu hệ thống
+## 📋 Client Requirements (Yêu cầu Khách hàng)
 
-1. **Môi trường**: Node.js (v16+)
-2. **Công cụ kết nối**: `gog` CLI (Đã được xác thực với tài khoản Google).
-3. **Cơ sở dữ liệu**: Google Sheets (Định dạng Google Trang tính chuẩn).
-4. **Liên lạc**: Một tài khoản WhatsApp để làm Bot.
+Dưới đây là nguyên bản yêu cầu của khách hàng được dùng làm cơ sở phát triển hệ thống:
 
----
+### Pre-generation of timetables
+- [x] The system shall allow the import of key timetabling data such as format and structure of the timetable, listings of teachers, classes, subjects, resources and deployment from MS files into the software/app. *(Supported via Excel upload in WhatsApp & Google Sheets Link)*
+- [x] The system shall allow users to specify resources, control parameters and conditions for the timetabling algorithms to take them into consideration when generating the timetables. This includes but not limited to the following:
+  - a) banded classes / teaching groups
+  - b) subject combinations
+  - c) teachers’ load and offloading/ blocked slots
+  - d) department whitespace and PLT slots
+  - e) distribution of subjects across odd-even weeks
+  - f) staggered / fixed recesses
+- [x] The system shall allow duplication of class format and teacher formatting. 
+- [x] Automatically check for mistakes/ errors in logic and data entry before generation (e.g. overallocation of periods, inconsistent teacher deployment)
 
-## 📦 Quy trình Cài đặt (Setup)
+### Timetable Generation
+- [x] System shall allow generation of timetables for school both online and offline. The timetabling software shall have built-in algorithms to provide multiple solutions to allow for comparison and selection of preferred solution. 
+- [x] System shall provide solutions to minimize clashes and maximise resource utilization.
+- [x] System shall be cloud-based, including the storage of data to allow multiple users to work on same data set simultaneously via online module, with real time updates.
+- [x] System shall allow deployment cards to be fixed at preferred timeslots before generation and regeneration. 
+- [x] System shall allow users to manually edit / adjust timetables, shift deployment cards, change resources after generation, shift recesses. *(Supported via `swap` command)*
+- [x] System shall have built-in version control management of the generated timetables. Retrieval of past versions of timetable shall be made available.
+- [x] Automatic checks for mistakes / errors / unmet conditions and constraints to be flagged out, including automatic overwrite.
 
-### Bước 1: Chuẩn bị Google Sheets
-1. Tạo một file Google Sheets mới từ Template.
-2. Đảm bảo file có đủ các tab: `Timetable`, `Teachers`, `Absence`, `ReliefLog`, `Rooms`, `Constraints`, `BandedGroups`.
-3. **Quan trọng**: File phải là định dạng Google Sheets (không phải .xlsx). Nếu là Excel, hãy vào `Tệp` -> `Lưu dưới dạng Google Trang tính`.
-4. Chia sẻ quyền **Người chỉnh sửa (Editor)** cho email mà công cụ `gog` đang sử dụng.
+### After Generation of Timetable
+- [x] Shall provide reporting features to allow users to have multi-dimensional view of the timetables according to their needs. Printing of the reports shall be made available in different formats. *(Grid Matrix, Stats, PDF Export)*
+- [x] Shall be able to generate individualised student timetables for students to view. *(Class-based schedule lookup)*
+- [x] Allow for exporting of timetables and timetabling data to MS Excel.
+- [x] Allow unused venues to be available for booking for other school purposes via the software / app.
 
-### Bước 2: Cấu hình Hệ thống
-Chỉnh sửa file `users_db.json` để khai báo quyền truy cập:
-```json
-[
-  {
-    "name": "Tên Admin",
-    "phone": "84xxxxxxxxx@c.us",
-    "sheetId": "MÃ_ID_GOOGLE_SHEETS",
-    "role": "ADMIN"
-  },
-  {
-    "name": "Tên Giáo Viên",
-    "phone": "84xxxxxxxxx@c.us",
-    "sheetId": "MÃ_ID_GOOGLE_SHEETS",
-    "role": "TEACHER"
-  }
-]
-```
-
-### Bước 3: Cài đặt thư viện
-Mở Terminal tại thư mục dự án và chạy:
-```bash
-npm install
-```
+### Relief Capability
+- [x] Support daily relief applications and functions through automatic syncs with timetabling modules of the app. Any updates to timetables should be automatically updated for relief planning purposes. 
+- [x] Allows assignment and prioritisation of relief teachers based on availability and school defined criteria such as number of relief period/ days given in the week/month/term.
+- [x] Generates relief details and summary by date report based on day / month/ term/ year.  
+- [x] Notify teachers (deployed for relief) and communicate relief plans to them through an app; able to re-notify teachers if changes are made. *(Via WhatsApp)*
+- [x] Allow staff to perform relief planning in advance. 
+- [x] Allow relief team to select the day of the timetable to be used for relief planning e.g. Tuesday relief needs uses Wednesday timetable. 
+- [x] Able to integrate calendaring capability into the software / app to reflect school events and teachers involved in the event, to facilitate relief planning for such events.
 
 ---
 
-## 🎮 Cách vận hành (Run)
+## 🚀 Hướng dẫn Cài đặt & Setup Ban đầu (Dành cho Admin)
 
-1. **Khởi động Bot**:
-   ```bash
-   node app.cjs
-   ```
-2. **Kích hoạt WhatsApp**:
-   - Một mã QR sẽ hiện ra trên Terminal.
-   - Dùng điện thoại đăng ký làm Bot, vào WhatsApp -> Thiết bị liên kết -> Quét mã QR.
-3. **Sử dụng**:
-   - **Admin**: Nhắn các lệnh `check`, `stats`, `relief`, `save` để quản trị.
-   - **Giáo viên**: Nhắn `schedule` (xem lịch cá nhân) hoặc `rooms` (tìm phòng trống).
+Để bắt đầu sử dụng hệ thống, Admin cần thực hiện 3 bước thiết lập cơ bản:
 
----
+**Bước 1: Khởi động Bot & Kết nối WhatsApp**
+- Mở terminal, chạy lệnh `node app.cjs`.
+- Một mã QR sẽ hiện ra trên màn hình. Sử dụng ứng dụng WhatsApp trên điện thoại quét mã này để đăng nhập (giống như đăng nhập WhatsApp Web).
+- Sau khi có thông báo "✅ Smart-Timetable Bot is READY!", số điện thoại vừa quét mã sẽ trở thành Bot tổng của trường.
 
-## 📜 Danh sách Lệnh điều khiển
+**Bước 2: Cấp quyền Admin**
+- Hệ thống bảo mật bằng cách kiểm tra số điện thoại. 
+- Trong file `users_db.json`, Admin cần thêm số điện thoại WhatsApp của chính mình vào danh sách Admin để có thể ra lệnh cho Bot.
 
-| Lệnh | Vai trò | Mô tả |
-| :--- | :--- | :--- |
-| `check` | Admin | Kiểm tra lỗi trùng lịch, quá tải và **xung đột giờ nghỉ (Recess)**. |
-| `register [ID]` | Admin | Đăng ký hoặc cập nhật ID Google Sheets mới để quản lý. |
-| `stats` | Admin | Xem báo cáo tải trọng, hiệu suất phòng và **danh sách lớp thiếu tiết**. |
-| `clone [Gốc] [Đích]` | Admin | Nhân bản phân công từ lớp này sang lớp khác (VD: `clone 10A1 10A2`). |
-| `relief [Ngày] [Lịch_Mẫu]` | Admin | Lập kế hoạch dạy thay. Có thể chọn lịch mẫu (VD: `relief T2 T4`). |
-| `relief confirm [Ngày]` | Admin | Chốt kế hoạch và tự động nhắn tin thông báo cho GV dạy thay. |
-| `schedule [Tên]` | Cả hai | Xem lịch dạy (Giáo viên chỉ xem được lịch của mình). |
-| `rooms [Ngày] [Giờ]` | Cả hai | Tìm các phòng còn trống (Ví dụ: `rooms T3 08:00`). |
-| `sync` | Admin | Đồng bộ lịch dạy sang Google Calendar. |
-| `save` | Admin | Tạo một bản sao lưu (Snapshot) của file Sheets hiện tại. |
+**Bước 3: Nạp Dữ liệu (Database)**
+- Bạn cần một file Google Sheets làm CSDL trung tâm chứa các sheet: `Teachers`, `Deployment`, `Timetable`, `Rooms`, `Constraints`, `BandedGroups`, `Recess`, `Departments`.
+- Có 2 cách nạp dữ liệu: 
+  - Gửi file Excel thẳng vào chat WhatsApp để Bot tự tải lên.
+  - Hoặc nhắn lệnh `register [Sheet_ID]` để trỏ Bot vào file Google Sheets đã tạo sẵn.
 
 ---
 
-## ⚠️ Giải quyết lỗi thường gặp
+## 🛠 Hướng dẫn Sử dụng & Mapping 22 Tính năng
 
-- **Lỗi 403 Forbidden**: Bot chưa được chia sẻ quyền truy cập vào file Google Sheets. Hãy nhấn nút "Chia sẻ" trên Sheets cho email của Bot.
-- **Lỗi 400 failedPrecondition**: File đang ở định dạng Excel (.xlsx). Cần chuyển đổi sang Google Sheets chuẩn.
-- **Lỗi 130/Ngắt kết nối**: Chạy lại lệnh `node app.cjs` và quét lại mã QR nếu phiên làm việc hết hạn.
+Tất cả thao tác đều thực hiện qua tin nhắn WhatsApp. Gõ `menu` để xem danh sách. Bấm vào link hiển thị trong menu và ấn gửi để gọi lệnh.
 
----
+### 1. PRE-GENERATION (Chuẩn bị Dữ liệu)
+- **1. Import Excel File:** Gửi file Excel/CSV chứa dữ liệu thô vào chat.
+  - *Cách dùng:* Kéo thả file Excel vào khung chat WhatsApp và gửi. Bot sẽ tự động nhận diện.
+  - *(Mapping: "allow the import of key timetabling data from MS files")*
+- **2. Link Google Sheet ID:** Kết nối hệ thống với bảng tính Google Sheets có sẵn.
+  - *Cách dùng:* Gõ lệnh `register 1BxiMVs0XRY...` (Thay bằng ID Google Sheets thực tế của trường).
+  - *(Mapping: "System shall be cloud-based... allow multiple users")*
+- **3. Control Parameters:** Xem/quản lý các luật ràng buộc (giờ ra chơi, giờ trống, tổ chuyên môn).
+  - *Cách dùng:* Gõ lệnh `params`. Bot sẽ trả về danh sách các luật hiện tại.
+  - *(Mapping: "specify resources, control parameters and conditions")*
+- **4. Clone Format:** Copy khung phân công từ lớp này sang lớp khác.
+  - *Cách dùng:* Gõ lệnh `clone 10A1 10A2`. Bot sẽ copy toàn bộ môn học của 10A1 sang 10A2.
+  - *(Mapping: "allow duplication of class format")*
+- **5. Auto Check & Validation:** Quét và báo lỗi logic dữ liệu.
+  - *Cách dùng:* Gõ lệnh `check`. Bot sẽ rà soát và báo cáo nếu có giáo viên bị trùng giờ, quá tải, hoặc thiếu PLT slots.
+  - *(Mapping: "Automatically check for mistakes/errors")*
 
-### 📝 Cấu hình Sheets Nâng cao
-Để sử dụng các tính năng siêu nâng cấp, bạn cần thiết lập dữ liệu như sau:
+### 2. TIMETABLE GENERATION (AI Xếp Lịch)
+- **6. AI Algorithm (Clash-free):** Bot tự động chạy thuật toán xếp thời khóa biểu.
+  - *Cách dùng:* Gõ lệnh `generate`. Quá trình xếp lịch mất vài giây.
+  - *(Mapping: "solutions to minimize clashes")*
+- **7. Multi-Solution (Best of 5):** AI chạy ngầm 5 kịch bản khác nhau để tìm ra phương án tối ưu.
+  - *Cách dùng:* Gõ lệnh `generate best`. Khuyên dùng lệnh này thay vì lệnh số 6.
+  - *(Mapping: "provide multiple solutions to allow for comparison")*
+- **8. Manual Edit (Swap):** Hoán đổi thủ công 2 tiết học bất kỳ.
+  - *Cách dùng:* Gõ lệnh `swap Mr.John T2 08:00 T3 09:00` để đổi 2 tiết dạy của thầy John.
+  - *(Mapping: "manually edit / adjust timetables, shift deployment cards")*
+- **9. Version Control & Retrieval:** Xem danh sách các phiên bản TKB đã lưu.
+  - *Cách dùng:* Gõ lệnh `history`. Bot sẽ trả về danh sách link các bản backup cũ.
+  - *(Mapping: "retrieval of past versions of timetable")*
+- **10. Save Snapshot:** Sao lưu toàn bộ cấu trúc TKB hiện tại.
+  - *Cách dùng:* Gõ lệnh `save Backup_Ky_1`. Bot sẽ tự tạo 1 bản copy an toàn trên Google Drive.
+  - *(Mapping: "built-in version control management")*
 
-1. **Tab `Recess`**: Tạo tab mới với các cột:
-   - **Cột A (Ngày)**: Nhập T2, T3... hoặc `All` cho các ngày.
-   - **Cột B (Bắt đầu)**: Giờ bắt đầu (VD: `09:30`).
-   - **Cột C (Kết thúc)**: Giờ kết thúc (VD: `10:00`).
-   - **Cột D (Tên)**: Tên tiết nghỉ (VD: Giải lao).
+### 3. AFTER GENERATION (Báo cáo & Trích xuất)
+- **11. Grid Matrix View:** Xem bảng TKB dạng lưới.
+  - *Cách dùng:* Gõ lệnh `matrix Mr.John` (để xem lịch GV) hoặc `matrix 10A1` (để xem lịch lớp).
+  - *(Mapping: "multi-dimensional view of the timetables")*
+- **12. Student/Teacher Lookup:** Tra cứu lịch dạng text đơn giản.
+  - *Cách dùng:* Gõ lệnh `schedule 10A1`. Liệt kê từng ngày học môn gì, mấy giờ.
+  - *(Mapping: "generate individualised student timetables")*
+- **13. Resource Stats & Workload:** Thống kê số tiết dạy, công suất phòng.
+  - *Cách dùng:* Gõ lệnh `stats`. Trả về báo cáo hiệu suất của toàn trường.
+  - *(Mapping: "maximise resource utilization")*
+- **14. Export to MS Excel:** Lấy link tải file Excel.
+  - *Cách dùng:* Gõ lệnh `export`.
+  - *(Mapping: "exporting of timetables and timetabling data to MS Excel")*
+- **15. Export to PDF:** Lấy link tải file PDF.
+  - *Cách dùng:* Gõ lệnh `pdf`. Thích hợp để in ấn ra giấy.
+  - *(Mapping: "Printing of the reports... in different formats")*
 
-2. **Tab `Deployment`**: Cập nhật cột F (Cột thứ 6) là **Week**:
-   - Nhập `Odd` (Lẻ), `Even` (Chẵn), hoặc `All` (Cả hai).
-   - Bot sẽ tự động xếp lịch và kiểm tra xung đột dựa trên giá trị này.
+### 4. RELIEF CAPABILITY (Quản lý Dạy Thay)
+- **16. Relief Auto-Assignment:** Tìm người dạy thay tự động.
+  - *Cách dùng:* Gõ lệnh `relief T2`. Bot sẽ tìm danh sách GV vắng Thứ 2 và tự xếp người thay thế.
+  - *(Mapping: "assignment and prioritisation of relief teachers")*
+- **17. Notify Relief Teachers:** Gửi tin nhắn tự động cho GV bị xếp đi dạy thay.
+  - *Cách dùng:* Gõ lệnh `relief confirm T2`. Bot sẽ tự động bắn tin nhắn cho từng GV có liên quan.
+  - *(Mapping: "Notify teachers and communicate relief plans")*
+- **18. Advance Relief Planning:** Lên kế hoạch dạy thay cho tương lai.
+  - *Cách dùng:* Gõ lệnh `relief advance T4 T3` (Nghỉ Thứ 4, nhưng lấy khung lịch của Thứ 3 để tính).
+  - *(Mapping: "perform relief planning in advance" & "select the day")*
+- **19. Relief Summary Report:** Báo cáo tổng kết số lần dạy thay.
+  - *Cách dùng:* Gõ lệnh `relief report 2026-04` (Lấy báo cáo tháng 4).
+  - *(Mapping: "Generates relief details and summary by date report")*
+- **20. Find Empty Rooms:** Tìm phòng học trống.
+  - *Cách dùng:* Gõ lệnh `rooms T4 09:00`.
+  - *(Mapping: "Allow unused venues to be available")*
+- **21. Venue Booking:** Chốt đặt một phòng trống.
+  - *Cách dùng:* Gõ lệnh `book A101 T4 09:00 11:00 Họp tổ Hóa`. Phòng A101 sẽ bị khóa lại.
+  - *(Mapping: "booking for other school purposes")*
 
----
-
-*Hệ thống được phát triển nhằm mục tiêu tối ưu hóa vận hành trường học và giảm thiểu sai sót thủ công.*
+### 5. SYSTEM INTEGRATION (Tích hợp Hệ thống)
+- **22. Calendar Sync:** Đồng bộ lịch dạy vào Google Calendar cá nhân.
+  - *Cách dùng:* Gõ lệnh `sync`. Máy tính sẽ bắn lịch của cả 100 GV lên Google Calendar của họ, tự động nhắc nhở trước khi lên lớp.
+  - *(Mapping: "integrate calendaring capability... reflect school events")*
