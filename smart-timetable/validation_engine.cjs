@@ -212,18 +212,15 @@ class ValidationEngine {
             const curEnd = this.timeToMin(end);
 
             recesses.forEach(r => {
-                const rDay = r[0]; // Cột A: Ngày
                 const rStart = r[1]; // Cột B: Bắt đầu
                 const rEnd = r[2]; // Cột C: Kết thúc
-                const rName = r[3] || "Recess Break";
+                const rName = r[0] || "Recess Break";
 
-                if ((rDay === 'All' || rDay === day) && rDay !== "") {
-                    const blockStart = this.timeToMin(rStart);
-                    const blockEnd = this.timeToMin(rEnd);
+                const blockStart = this.timeToMin(rStart);
+                const blockEnd = this.timeToMin(rEnd);
 
-                    if (curStart < blockEnd && curEnd > blockStart) {
-                        issues.push(`Row ${idx + 2}: Teaching during recess (${rName}) on ${day}`);
-                    }
+                if (curStart < blockEnd && curEnd > blockStart) {
+                    issues.push(`Row ${idx + 2}: Teaching during recess (${rName}) on ${day}`);
                 }
             });
         });

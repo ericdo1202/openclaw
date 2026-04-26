@@ -16,7 +16,7 @@ class SheetsClient {
     async getRange(range) {
         try {
             if (!this.sheetId) throw new Error("Missing Sheet ID");
-            const cmd = `gog sheets get ${this.sheetId} "${range}" --json`;
+            const cmd = `gog sheets get "${this.sheetId}" "${range}" --json`;
             const output = execSync(cmd, { encoding: 'utf8' });
             const data = JSON.parse(output);
             return data.values || [];
@@ -48,6 +48,20 @@ class SheetsClient {
             return { success: true };
         } catch (error) {
             console.error(`[Sheets] Error updating range ${range}:`, error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Xóa sạch dữ liệu trong một dải ô (Tab)
+     */
+    async clearRange(range) {
+        try {
+            if (!this.sheetId) throw new Error("Missing Sheet ID");
+            execFileSync('gog', ['sheets', 'clear', this.sheetId, range]);
+            return { success: true };
+        } catch (error) {
+            console.error(`[Sheets] Error clearing range ${range}:`, error.message);
             return { success: false, error: error.message };
         }
     }

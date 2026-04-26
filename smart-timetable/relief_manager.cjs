@@ -52,7 +52,7 @@ class ReliefManager {
                 // 3. Tìm GV thay thế "Sạch"
                 let candidates = await Promise.all(teachersList.filter(t => t[0] !== absentTeacher).map(async (t) => {
                     const name = t[0];
-                    const email = t[4]; // Cột Email (0-indexed 4)
+                    const email = t[5]; // Cột Email (0-indexed 5: Column F)
                     
                     const isBusyClass = timetable.some(r => r[0] === name && r[1] === day && r[2] === start);
                     const isBusyConstraint = constraints.some(c => 

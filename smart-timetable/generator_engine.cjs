@@ -36,7 +36,7 @@ class GeneratorEngine {
         }
 
         if (bestResult) {
-            const header = [["Teacher", "Day", "Start", "End", "GroupId", "Class", "Week", "Room"]];
+            const header = [["Teacher", "Day", "Start", "End", "Subject", "Class", "Week", "Room"]];
             const finalData = header.concat(bestResult.timetable);
             await this.sheets.updateRange(CONFIG.SHEET_RANGES.TIMETABLE, finalData);
             bestResult.score = bestScore;
@@ -92,10 +92,12 @@ class GeneratorEngine {
         
         let tasks = [];
         deployment.forEach(d => {
-            const [className, subject, teacher, periods, groupId, week] = d;
+            const [className, subject, periods, teacher, groupId, week] = d;
             const count = parseInt(periods) || 0;
-            for (let i = 0; i < count; i++) {
-                tasks.push({ className, subject, teacher, groupId, week: week || "All" });
+            if (teacher && count > 0) {
+                for (let i = 0; i < count; i++) {
+                    tasks.push({ className, subject, teacher, groupId, week: week || "All" });
+                }
             }
         });
 
@@ -108,31 +110,45 @@ class GeneratorEngine {
         });
 
         let failedTasks = [];
+        const failureReasons = {
+            capacity: 0,
+            teacher_busy: 0,
+            class_busy: 0,
+            blocked: 0,
+            room_full: 0,
+            recess: 0
+        };
+
+        const classCounts = {};
+        tasks.forEach(t => classCounts[t.className] = (classCounts[t.className] || 0) + 1);
+        const maxCapacity = this.days.length * this.timeSlots.length;
 
         for (const task of tasks) {
+            if (classCounts[task.className] > maxCapacity) {
+                // Tự động fail nếu vượt quá tổng số slot trong tuần
+                // (Chỉ đếm 1 lần cho mỗi task thừa)
+            }
+
             let placed = false;
-            // Thêm yếu tố ngẫu nhiên vào thứ tự ngày để đa dạng hóa
             const shuffledDays = [...this.days].sort(() => Math.random() - 0.5);
             
+            // Theo dõi lý do tại sao không xếp được vào TẤT CẢ các slot
+            let reasonsForThisTask = { teacher: 0, class: 0, blocked: 0, recess: 0, room: 0 };
+
             for (const day of shuffledDays) {
                 for (const slot of this.timeSlots) {
                     const start = slot;
                     const end = this.addOneHour(slot);
 
                     const isRecess = recesses.some(r => {
-                        const rDay = r[0];
-                        if (rDay !== 'All' && rDay !== day) return false;
                         const blockStart = this.validator.timeToMin(r[1]);
                         const blockEnd = this.validator.timeToMin(r[2]);
                         return this.validator.timeToMin(start) < blockEnd && this.validator.timeToMin(end) > blockStart;
                     });
-                    if (isRecess) continue;
+                    if (isRecess) { reasonsForThisTask.recess++; continue; }
 
-                    const isBusy = newTimetable.some(r => 
-                        (r[0] === task.teacher || r[5] === task.className) && 
-                        r[1] === day && r[2] === start &&
-                        this.validator.isWeekClash(task.week, r[6])
-                    );
+                    const teacherBusy = newTimetable.some(r => r[0] === task.teacher && r[1] === day && r[2] === start && this.validator.isWeekClash(task.week, r[6]));
+                    const classBusy = newTimetable.some(r => r[5] === task.className && r[1] === day && r[2] === start && this.validator.isWeekClash(task.week, r[6]));
 
                     const isBlocked = constraints.some(c => 
                         c[0] === task.teacher && c[1] === day && 
@@ -140,17 +156,24 @@ class GeneratorEngine {
                         this.validator.timeToMin(end) > this.validator.timeToMin(c[2])
                     );
 
-                    if (!isBusy && !isBlocked) {
+                    if (teacherBusy) reasonsForThisTask.teacher++;
+                    else if (classBusy) reasonsForThisTask.class++;
+                    else if (isBlocked) reasonsForThisTask.blocked++;
+                    else {
                         const busyRooms = newTimetable
                             .filter(r => r[1] === day && r[2] === start && this.validator.isWeekClash(task.week, r[6]))
                             .map(r => r[7]);
                             
                         const availableRooms = rooms.filter(r => !busyRooms.includes(r));
-                        const assignedRoom = availableRooms.length > 0 ? availableRooms[0] : "[❌ ROOM CONFLICT/FULL]";
+                        if (availableRooms.length === 0) {
+                            reasonsForThisTask.room++;
+                            continue;
+                        }
 
+                        const assignedRoom = availableRooms[0];
                         newTimetable.push([
                             task.teacher, day, start, end, 
-                            task.groupId || "", task.className, task.week, assignedRoom
+                            task.subject, task.className, task.week, assignedRoom
                         ]);
                         placed = true;
                         break;
@@ -158,11 +181,20 @@ class GeneratorEngine {
                 }
                 if (placed) break;
             }
-            if (!placed) failedTasks.push(task);
+
+            if (!placed) {
+                failedTasks.push(task);
+                // Phân loại lý do chính (thường là do lớp hoặc gv bận nhiều nhất)
+                if (classCounts[task.className] > maxCapacity) failureReasons.capacity++;
+                else if (reasonsForThisTask.class > reasonsForThisTask.teacher) failureReasons.class_busy++;
+                else if (reasonsForThisTask.teacher > reasonsForThisTask.blocked) failureReasons.teacher_busy++;
+                else if (reasonsForThisTask.blocked > 0) failureReasons.blocked++;
+                else failureReasons.room_full++;
+            }
         }
 
         if (shouldSave && newTimetable.length > 0) {
-            const header = [["Teacher", "Day", "Start", "End", "GroupId", "Class", "Week", "Room"]];
+            const header = [["Teacher", "Day", "Start", "End", "Subject", "Class", "Week", "Room"]];
             const finalData = header.concat(newTimetable);
             await this.sheets.updateRange(CONFIG.SHEET_RANGES.TIMETABLE, finalData);
         }
@@ -172,7 +204,8 @@ class GeneratorEngine {
             totalPlaced: tasks.length - failedTasks.length,
             failedCount: failedTasks.length,
             timetable: newTimetable,
-            failedTasks
+            failedTasks,
+            failureReasons
         };
     }
 

@@ -23,8 +23,12 @@ class WhatsappBot {
       if (msg.from.endsWith('@newsletter') || msg.from.endsWith('@broadcast')) return;
 
       let body = msg.body || "";
-      if (!body.trim()) return;
+      if (!body.trim() && !msg.hasMedia) return;
 
+      // Bỏ qua các tin nhắn phản hồi tự động của bot (bắt đầu bằng các icon hệ thống) để tránh loop
+      const cleanBody = body.trim();
+      if (cleanBody.match(/^(✅|❌|🌟|👉|📥|🎓|⚠️|⚙️|📊|🚫|🤖|📋|❓|🕒|🕒|🔔|🔄|🏠|ℹ️|📖|🚀|🛠|📅|🗂)/)) return;
+      
       let realPhone = msg.author || msg.from;
       const botPhone = this.client.info.wid.user;
       try {
@@ -33,23 +37,41 @@ class WhatsappBot {
       } catch (e) {}
       if (msg.fromMe || realPhone.includes(botPhone)) realPhone = botPhone;
 
+      console.log(`\n[WhatsApp] 📥 NHẬN <- [${realPhone}]: ${body ? body : (msg.hasMedia ? '<Media File>' : '<Empty>')}`);
+
       const parts = body.trim().split(/\s+/);
       const firstWord = parts[0].toLowerCase();
       const args = parts.slice(1).join(" ");
+      
+      const replyWithLog = async (content) => {
+          console.log(`[WhatsApp] 📤 TRẢ LỜI -> [${msg.from}]:\n${content}`);
+          await msg.reply(content);
+      };
+
+      const sendWithLog = async (to, content) => {
+          console.log(`[WhatsApp] 📤 GỬI -> [${to}]:\n${content}`);
+          await this.client.sendMessage(to, content);
+      };
 
       // Xử lý file đính kèm (Import Excel/CSV)
-      if (msg.hasMedia && (firstWord === 'import' || !firstWord)) {
+      if (msg.hasMedia) {
           try {
               const media = await msg.downloadMedia();
-              if (media.mimetype.includes('spreadsheet') || media.mimetype.includes('excel') || media.mimetype.includes('csv')) {
-                  // Ở đây có thể tích hợp script parse file và push lên sheets
-                  // Hiện tại mock thành công để báo cho người dùng
-                  await msg.reply(`✅ Đã nhận file ${media.filename || 'Excel'}. Hệ thống đang xử lý và import dữ liệu vào Google Sheets...`);
-                  return;
+              if (media) {
+                  const mime = (media.mimetype || '').toLowerCase();
+                  const filename = (media.filename || '').toLowerCase();
+                  const isExcel = mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('csv') || filename.endsWith('.xlsx') || filename.endsWith('.csv');
+                  
+                  if (isExcel || firstWord === 'import') {
+                      await replyWithLog(`✅ Đã nhận file ${media.filename || 'Excel'}. Hệ thống đang tiến hành bóc tách 11 tab và push lên Google Sheets...`);
+                      const report = await this.onCheck(realPhone, 'import_media_base64', media.data);
+                      if (report) await replyWithLog(report);
+                      return;
+                  }
               }
           } catch (e) {
               console.error("[WhatsApp] Error downloading media:", e);
-              await msg.reply("❌ Lỗi khi tải file. Vui lòng thử lại.");
+              await replyWithLog("❌ Lỗi khi tải file. Vui lòng thử lại.");
               return;
           }
       }
@@ -97,7 +119,7 @@ class WhatsappBot {
 ───────────────────────
 _Chạm vào link → Nhấn nút Gửi._`;
 
-        return await this.client.sendMessage(msg.from, menuText);
+        return await sendWithLog(msg.from, menuText);
       }
 
       // Mapping 22 số → lệnh
@@ -110,14 +132,32 @@ _Chạm vào link → Nhấn nút Gửi._`;
       };
 
       const input = numMapping[firstWord] ? firstWord : null;
+      const slowCommands = ['import', 'generate', 'check', 'clone', 'relief', 'sync', 'matrix', 'pdf', 'export'];
+      const cmd = input ? numMapping[input].split(/\s+/)[0] : firstWord;
 
       if (input) {
         const mappedParts = numMapping[input].split(/\s+/);
-        const report = await this.onCheck(realPhone, mappedParts[0], mappedParts.slice(1).join(" ") || args);
-        if (report) await this.client.sendMessage(msg.from, report);
+        const actualCmd = mappedParts[0];
+        console.log(`[WhatsApp] Xử lý lệnh map số: ${actualCmd} ${mappedParts.slice(1).join(" ") || args}`);
+        
+        if (slowCommands.includes(actualCmd)) {
+            await msg.reply(`⚙️ Hệ thống đang xử lý lệnh *'${actualCmd}'*... Vui lòng đợi trong giây lát!`);
+            // Chờ một chút để message được gửi đi trước khi bắt đầu tác vụ nặng (tránh block loop)
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        const report = await this.onCheck(realPhone, actualCmd, mappedParts.slice(1).join(" ") || args);
+        if (report) await sendWithLog(msg.from, report);
       } else {
+        console.log(`[WhatsApp] Xử lý lệnh text: ${firstWord} ${args}`);
+        
+        if (slowCommands.includes(firstWord)) {
+            await msg.reply(`⚙️ Hệ thống đang xử lý lệnh *'${firstWord}'*... Vui lòng đợi trong giây lát!`);
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
         const report = await this.onCheck(realPhone, firstWord, args);
-        if (report) await this.client.sendMessage(msg.from, report);
+        if (report) await sendWithLog(msg.from, report);
       }
     });
 
@@ -125,7 +165,10 @@ _Chạm vào link → Nhấn nút Gửi._`;
   }
 
   async sendMessage(to, content) {
-    try { await this.client.sendMessage(to, content); }
+    try { 
+      console.log(`[WhatsApp] 📤 GỬI CHỦ ĐỘNG -> [${to}]:\n${content}`);
+      await this.client.sendMessage(to, content); 
+    }
     catch (error) { console.error(`[WhatsApp] Error:`, error.message); }
   }
 }

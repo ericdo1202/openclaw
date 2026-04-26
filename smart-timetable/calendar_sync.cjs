@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const CONFIG = require('./config.json');
 
 /**
@@ -11,7 +11,7 @@ class CalendarSync {
     }
 
     /**
-     * Đồng bộ lịch cho toàn bộ GV
+     * Đồng bộ lịch cho toàn bộ GV (Cách 1: Dùng chung một lịch Master)
      */
     async syncAllTeachers() {
         const teachersRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.TEACHERS);
@@ -20,45 +20,64 @@ class CalendarSync {
         const teachers = teachersRaw.slice(1);
         const timetable = timetableRaw.slice(1);
 
-        for (const teacher of teachers) {
-            const [name, , , , email] = teacher;
-            if (!email) continue;
+        let successCount = 0;
+        const masterCalendar = CONFIG.MASTER_CALENDAR_ID || 'primary';
 
-            console.log(`[Calendar] Đang đồng bộ cho: ${name} (${email})...`);
+        console.log(`[Calendar] 🚀 Bắt đầu đồng bộ vào lịch Master: ${masterCalendar}`);
+
+        for (const teacher of teachers) {
+            const [name] = teacher;
+            if (!name) continue;
+
             const teacherSlots = timetable.filter(r => r[0] === name);
-            
             for (const slot of teacherSlots) {
-                await this.createEvent(email, slot);
+                // Tạo sự kiện trên lịch Master, thêm tên GV vào tiêu đề
+                const ok = await this.createEvent(masterCalendar, slot);
+                if (ok) successCount++;
             }
         }
+
+        return { successCount, masterCalendar };
     }
 
     /**
-     * Tạo một sự kiện trên Google Calendar
+     * Tạo sự kiện trên Google Calendar
      */
     async createEvent(calendarId, slot) {
-        const [teacher, day, start, end, , className, , room] = slot;
+        const [teacher, day, start, end, subject, className, type, room] = slot;
         
-        // Giả sử ngày hiện tại là mốc để tính T2, T3... cho tuần tới
-        const eventDate = this.getNextDate(day);
-        const startTime = `${eventDate}T${start}:00+07:00`;
-        const endTime = `${eventDate}T${end}:00+07:00`;
-
-        const event = {
-            summary: `Dạy lớp ${className} - ${room}`,
-            location: room,
-            description: `Tiết dạy thời khóa biểu. GV: ${teacher}`,
-            start: { dateTime: startTime },
-            end: { dateTime: endTime }
+        // Chuyển đổi Thứ sang Ngày cụ thể (Logic tạm thời: Tuần tới)
+        const date = this.getNextDate(day);
+        
+        // Format RFC3339: YYYY-MM-DDTHH:mm:ss+HH:mm
+        const formatTime = (timeStr) => {
+            let [h, m] = timeStr.split(':');
+            return `${h.padStart(2, '0')}:${(m || '00').padStart(2, '0')}:00`;
         };
 
+        const tz = CONFIG.TIMEZONE_OFFSET || '+07:00';
+        const startTime = `${date}T${formatTime(start)}${tz}`;
+        const endTime = `${date}T${formatTime(end)}${tz}`;
+
+        const summary = `Dạy lớp ${className} - ${room} (GV: ${teacher})`;
+
+        const args = [
+            'calendar', 'create', calendarId,
+            '--summary', summary,
+            '--location', room || 'N/A',
+            '--description', `Tiết dạy thời khóa biểu. GV: ${teacher}. Môn: ${subject}. Loại: ${type}`,
+            '--from', startTime,
+            '--to', endTime,
+            '--json'
+        ];
+
         try {
-            const jsonStr = JSON.stringify(event);
-            const cmd = `${this.gogPath} calendar events create ${calendarId} '${jsonStr}' --json`;
-            execSync(cmd);
+            // Sử dụng execFileSync để tránh lỗi shell escape với các ký tự đặc biệt trong ID (dấu ngoặc, dấu chấm...)
+            execFileSync(this.gogPath, args, { encoding: 'utf8' });
             return true;
         } catch (error) {
             console.error(`[Calendar] Lỗi tạo sự kiện cho ${calendarId}:`, error.message);
+            if (error.stderr) console.error(`[Calendar] Chi tiết: ${error.stderr}`);
             return false;
         }
     }

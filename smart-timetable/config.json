@@ -1,8 +1,10 @@
 {
   "SERVER_PORT": 3001,
+  "MASTER_CALENDAR_ID": "dovaduoc1204@gmail.com",
+  "TIMEZONE_OFFSET": "+07:00",
   "SHEET_RANGES": {
     "TIMETABLE": "Timetable!A:H",
-    "TEACHERS": "Teachers!A:E",
+    "TEACHERS": "Teachers!A:F",
     "CONSTRAINTS": "Constraints!A:E",
     "BANDED_GROUPS": "BandedGroups!A:D",
     "DEPLOYMENT": "Deployment!A:E",

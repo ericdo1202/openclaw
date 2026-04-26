@@ -72,11 +72,64 @@ async function start() {
             return `❌ Hello ${teacherName}, the command "${command}" is for Admins only. You can use: schedule, rooms, export.`;
         }
 
+        if (command !== 'register' && !sheetId) {
+            return "❌ Bạn chưa thiết lập Google Sheet ID. Vui lòng sử dụng lệnh: register [Sheet_ID]";
+        }
+
         const sheets = new SheetsClient(sheetId);
         const validator = new ValidationEngine(sheets);
 
         // --- XỬ LÝ LỆNH ---
+        console.log(`[App] ⚙️ Đang xử lý tính năng: ${command.toUpperCase()} (Args: ${args.substring(0, 50)}${args.length > 50 ? '...' : ''})`);
         try {
+            if (command === 'import_media_base64') {
+                try {
+                    const tempFilePath = path.join(__dirname, `temp_import_${Date.now()}.xlsx`);
+                    fs.writeFileSync(tempFilePath, Buffer.from(args, 'base64'));
+                    
+                    const { execFileSync } = require('child_process');
+                    console.log(`[App] ⚙️ Uploading & Converting Excel to Google Sheets...`);
+                    
+                    const resultRaw = execFileSync('gog', [
+                        'drive', 'upload', tempFilePath,
+                        '--convert',
+                        `--name=Smart Timetable Data (${new Date().toLocaleDateString()})`,
+                        '--json'
+                    ], { encoding: 'utf8' });
+                    
+                    const result = JSON.parse(resultRaw);
+                    const newSheetId = result.file.id;
+                    const webViewLink = result.file.webViewLink;
+                    
+                    // Cập nhật users_db.json
+                    const oldSheetId = sheetId;
+                    const adminIndex = users.findIndex(u => {
+                        const normalizedDB = u.phone.replace(/\D/g, "");
+                        const normalizedIncoming = phone.replace(/\D/g, "");
+                        return normalizedIncoming.includes(normalizedDB) || normalizedDB.includes(normalizedIncoming);
+                    });
+                    
+                    if (adminIndex !== -1) {
+                        users[adminIndex].sheetId = newSheetId;
+                        fs.writeFileSync(dbPath, JSON.stringify(users, null, 2));
+                    }
+                    
+                    // Xóa file tạm
+                    fs.unlinkSync(tempFilePath);
+                    
+                    // Tùy chọn: Xóa file cũ để dọn rác (nếu có)
+                    // if (oldSheetId) {
+                    //     try { execFileSync('gog', ['drive', 'trash', oldSheetId]); } 
+                    //     catch (e) { console.log("[App] ⚠️ Không thể trash file cũ:", e.message); }
+                    // }
+
+                    return `✅ *IMPORT HOÀN TẤT!*\n──────────────────\n🎉 Dữ liệu đã được tạo thành file Google Sheets mới toanh!\n\n🔗 *Link Truy Cập:*\n${webViewLink}\n\n👉 Bot đã tự động liên kết hệ thống vào file mới này. Bạn có thể dùng lệnh 'check' để bắt đầu!`;
+                } catch (e) {
+                    console.error(`[App] ❌ Ngoại lệ khi Import:`, e);
+                    return `❌ *LỖI IMPORT*\nVui lòng kiểm tra lại kết nối mạng hoặc phiên đăng nhập Google.`;
+                }
+            }
+
             if (command === 'register') {
                 const newSheetId = args.trim();
                 if (!newSheetId) return "👉 Please provide Sheet ID: register [NEW_ID]";
@@ -139,8 +192,14 @@ async function start() {
 
             if (command === 'sync') {
                 const sync = new CalendarSync(sheets);
-                await sync.syncAllTeachers();
-                return "✅ Google Calendar synchronization completed for all teachers!";
+                const summary = await sync.syncAllTeachers();
+                
+                let report = `✅ Google Calendar synchronization completed!\n──────────────────\n`;
+                report += `🔹 Successfully synced: ${summary.successCount} slots\n`;
+                report += `📅 *Lịch Master:* ${summary.masterCalendar}\n\n`;
+                report += `_Mọi lịch dạy của tất cả GV đã được gộp chung vào một lịch duy nhất để dễ theo dõi._\n\n`;
+                report += `📅 *Xem lịch tại đây (Chế độ Tuần):*\nhttps://calendar.google.com/calendar/u/0/r/week`;
+                return report;
             }
 
             if (command === 'import') {
@@ -176,7 +235,7 @@ async function start() {
 
                 // Ghi lại
                 await sheets.updateRange(CONFIG.SHEET_RANGES.TIMETABLE, [timetableRaw[0], ...timetable]);
-                return msg + "\n👉 Nhớ chạy lệnh *check* để đảm bảo không bị trùng giờ sau khi đổi nhé!";
+                return msg + "\n👉 Hãy mở Google Sheets, tab 'Timetable' để xem thay đổi và nhớ gõ lệnh *check* để đảm bảo không bị trùng giờ sau khi đổi nhé!";
             }
 
             if (command === 'pdf') {
@@ -211,10 +270,21 @@ async function start() {
                 if (isBest) report += `⭐ Quality Score: ${genResult.score.toFixed(2)}\n`;
                 
                 if (genResult.failedCount > 0) {
-                    report += `❌ Failed: ${genResult.failedCount} slots\nReason: No available slots left!\n`;
+                    report += `❌ Failed: ${genResult.failedCount} slots\n`;
+                    report += `*Lý do thất bại:*\n`;
+                    const r = genResult.failureReasons;
+                    if (r.capacity > 0) {
+                        report += `  • Vượt quá 40 tiết/lớp: ${r.capacity} tiết (Lỗi nặng!)\n`;
+                        report += `    👉 *Lời khuyên:* Hãy kiểm tra tab 'Deployment', có thể bạn đã clone quá nhiều môn cho cùng một lớp (Tổng số tiết vượt quá dung lượng 1 tuần).\n`;
+                    }
+                    if (r.class_busy > 0) report += `  • Trùng lịch lớp: ${r.class_busy} tiết\n`;
+                    if (r.teacher_busy > 0) report += `  • Trùng lịch GV: ${r.teacher_busy} tiết\n`;
+                    if (r.blocked > 0) report += `  • Vướng lịch bận GV: ${r.blocked} tiết\n`;
+                    if (r.room_full > 0) report += `  • Hết phòng trống: ${r.room_full} tiết\n`;
                 } else {
-                    report += `🎊 100% Completed with zero errors!`;
+                    report += `🎊 100% Completed with zero errors!\n`;
                 }
+                report += `\n👉 Hãy mở Google Sheets, tab 'Timetable' để xem kết quả xếp lịch tự động nhé!`;
                 return report;
             }
 
@@ -223,7 +293,9 @@ async function start() {
                 const [source, target] = (args || "").split(/\s+/);
                 if (!source || !target) return "👉 Please enter: clone [Source_Class] [Target_Class]";
                 const result = await depManager.cloneClassDeployment(source, target);
-                if (result.success) return `✅ Successfully cloned ${result.count} rows from ${source} to ${target}!`;
+                if (result.success) {
+                    return `✅ Successfully cloned ${result.count} rows from ${source} to ${target}!\n👉 Hãy mở Google Sheets, tab 'Deployment' để kiểm tra lại dữ liệu của lớp ${target} nhé! (Tránh clone quá nhiều lần gây quá tải tiết dạy)`;
+                }
                 return `❌ Error: ${result.error}`;
             }
 
@@ -258,7 +330,7 @@ async function start() {
                             await bot.sendMessage(tPhone, content);
                         }
                     }
-                    return `✅ Plan saved and notifications sent for ${result.plan.length} slots on ${date}!`;
+                    return `✅ Plan saved and notifications sent for ${result.plan.length} slots on ${date}!\n👉 Hãy mở Google Sheets, tab 'ReliefLog' để xem lịch sử dạy thay nhé!`;
                 }
                 let report = `📋 *RELIEF PLAN (${date})*\n──────────────────\n`;
                 result.plan.forEach(p => { report += `🔸 *${p.absentTeacher}* (Class ${p.className})\n   └ Slot: ${p.slot}\n   └ Covering: *${p.reliefTeacher}*\n\n`; });
@@ -313,6 +385,8 @@ async function start() {
                 
                 return `✅ Room ${room} booked successfully!\n📅 Date: ${day}\n⏰ Time: ${start} - ${end}\n📝 Note: ${desc}`;
             }
+
+            return `❓ Lệnh *'${command}'* không hợp lệ.\n👉 Gõ *'menu'* để xem danh sách các tính năng khả dụng!`;
         } catch (err) {
             console.error(`[Command Error] Error processing ${command}:`, err.message);
             return `❌ Error: ${err.message}`;

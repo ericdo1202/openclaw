@@ -22,14 +22,14 @@ class HistoryManager {
             
             // 2. Copy file vào thư mục đó
             console.log(`📦 Đang tạo bản sao lưu: ${backupName}...`);
-            const cmd = `${this.gogPath} drive copy ${spreadsheetId} "${backupName}" --json`;
+            const cmd = `${this.gogPath} drive copy "${spreadsheetId}" "${backupName}" --json`;
             const result = JSON.parse(execSync(cmd, { encoding: 'utf-8' }));
             
             const newFileId = result.id || result.fileId;
             
             // 3. Di chuyển vào thư mục History (nếu copy chưa vào thẳng folder)
             if (folderId) {
-                execSync(`${this.gogPath} drive move ${newFileId} --folder ${folderId}`);
+                execSync(`${this.gogPath} drive move "${newFileId}" --folder "${folderId}"`);
             }
 
             return { success: true, name: backupName, id: newFileId };
@@ -45,7 +45,7 @@ class HistoryManager {
     async listSnapshots() {
         try {
             const folderId = await this._ensureHistoryFolder();
-            const cmd = `${this.gogPath} drive ls ${folderId} --json`;
+            const cmd = `${this.gogPath} drive ls "${folderId}" --json`;
             const result = JSON.parse(execSync(cmd, { encoding: 'utf-8' }));
             
             // gog drive ls trả về mảng các file

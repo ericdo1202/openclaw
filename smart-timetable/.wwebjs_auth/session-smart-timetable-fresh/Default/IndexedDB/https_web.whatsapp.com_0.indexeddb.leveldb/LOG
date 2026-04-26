@@ -1,28 +1,28 @@
-2026/04/22-21:28:22.428 4e5904 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/04/22-21:28:22.428 4e5904 Recovering log #420
-2026/04/22-21:28:22.433 4e5904 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000420.log 
-2026/04/23-04:03:26.261 4e5906 Level-0 table #433: started
-2026/04/23-04:03:26.296 4e5906 Level-0 table #433: 1351341 bytes OK
-2026/04/23-04:03:26.307 4e5906 Delete type=0 #420
-2026/04/23-04:11:44.499 4e5904 Compacting 1@1 + 9@2 files
-2026/04/23-04:11:44.561 4e5904 Generated table #434@1: 86613 keys, 2236418 bytes
-2026/04/23-04:11:44.594 4e5904 Generated table #435@1: 63827 keys, 2284778 bytes
-2026/04/23-04:11:44.609 4e5904 Generated table #436@1: 1891 keys, 2150419 bytes
-2026/04/23-04:11:44.623 4e5904 Generated table #437@1: 7723 keys, 2153320 bytes
-2026/04/23-04:11:44.653 4e5904 Generated table #438@1: 26709 keys, 2235868 bytes
-2026/04/23-04:11:44.670 4e5904 Generated table #439@1: 14243 keys, 2138079 bytes
-2026/04/23-04:11:44.707 4e5904 Generated table #440@1: 116003 keys, 2269809 bytes
-2026/04/23-04:11:44.740 4e5904 Generated table #441@1: 116416 keys, 2268198 bytes
-2026/04/23-04:11:44.749 4e5904 Generated table #442@1: 18541 keys, 458621 bytes
-2026/04/23-04:11:44.749 4e5904 Compacted 1@1 + 9@2 files => 18195510 bytes
-2026/04/23-04:11:44.751 4e5904 compacted to: files[ 0 0 9 0 0 0 0 ]
-2026/04/23-04:11:44.751 4e5904 Delete type=2 #428
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #429
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #424
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #430
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #425
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #433
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #427
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #426
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #422
-2026/04/23-04:11:44.752 4e5904 Delete type=2 #423
+2026/04/26-13:16:03.464 1b5b6a63 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/26-13:16:03.464 1b5b6a63 Recovering log #527
+2026/04/26-13:16:03.491 1b5b6a63 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000527.log 
+2026/04/26-13:16:06.348 1b5b6a66 Level-0 table #540: started
+2026/04/26-13:16:06.379 1b5b6a66 Level-0 table #540: 1266864 bytes OK
+2026/04/26-13:16:06.381 1b5b6a66 Delete type=0 #527
+2026/04/26-13:16:06.390 1b5b6a66 Compacting 1@1 + 9@2 files
+2026/04/26-13:16:06.431 1b5b6a66 Generated table #541@1: 85778 keys, 2235528 bytes
+2026/04/26-13:16:06.466 1b5b6a66 Generated table #542@1: 89281 keys, 2322449 bytes
+2026/04/26-13:16:06.483 1b5b6a66 Generated table #543@1: 14394 keys, 2178156 bytes
+2026/04/26-13:16:06.496 1b5b6a66 Generated table #544@1: 1660 keys, 2140245 bytes
+2026/04/26-13:16:06.518 1b5b6a66 Generated table #545@1: 25245 keys, 2211645 bytes
+2026/04/26-13:16:06.539 1b5b6a66 Generated table #546@1: 10100 keys, 2178793 bytes
+2026/04/26-13:16:06.565 1b5b6a66 Generated table #547@1: 55025 keys, 2190336 bytes
+2026/04/26-13:16:06.618 1b5b6a66 Generated table #548@1: 115576 keys, 2268572 bytes
+2026/04/26-13:16:06.652 1b5b6a66 Generated table #549@1: 108122 keys, 2213104 bytes
+2026/04/26-13:16:06.652 1b5b6a66 Compacted 1@1 + 9@2 files => 19938828 bytes
+2026/04/26-13:16:06.655 1b5b6a66 compacted to: files[ 0 0 9 0 0 0 0 ]
+2026/04/26-13:16:06.656 1b5b6a66 Delete type=2 #529
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #540
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #533
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #532
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #530
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #531
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #535
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #534
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #536
+2026/04/26-13:16:06.657 1b5b6a66 Delete type=2 #537

@@ -7,7 +7,7 @@ const CONFIG = require('./config.json');
 function fetchSheetData(sheetId, range) {
     try {
         if (!sheetId) return { error: "Missing sheetId" };
-        const cmd = `gog sheets get ${sheetId} "${range}" --json`;
+        const cmd = `gog sheets get "${sheetId}" "${range}" --json`;
         const output = execSync(cmd, { encoding: 'utf8' });
         return JSON.parse(output);
     } catch (error) {
