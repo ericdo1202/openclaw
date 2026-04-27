@@ -1,6 +1,6 @@
 {
   "SERVER_PORT": 3001,
-  "MASTER_CALENDAR_ID": "dovaduoc1204@gmail.com",
+  "MASTER_CALENDAR_ID": "primary",
   "TIMEZONE_OFFSET": "+07:00",
   "SHEET_RANGES": {
     "TIMETABLE": "Timetable!A:H",

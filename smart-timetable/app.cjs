@@ -16,12 +16,31 @@ const path = require('path');
 async function start() {
     console.log("🚀 Starting Smart-Timetable (Secure Bot Version)...");
 
+    const userStates = {}; // Bộ nhớ tạm để lưu trạng thái hội thoại (State Management)
+
     const onCheck = async (phone, command, args) => {
-        // 1. Nạp danh sách Admin từ DB
+        // --- 1. XỬ LÝ TRẠNG THÁI HỘI THOẠI (CHATBOT STATE) - ƯU TIÊN CAO NHẤT ---
+        if (userStates[phone]) {
+            const isNumericCommand = command.match(/^[0-9]+$/);
+            const isMenuCommand = ['menu', 'help', 'start'].includes(command.toLowerCase());
+
+            if (!isNumericCommand && !isMenuCommand) {
+                // Lấy nội dung tin nhắn mới làm tham số (args) cho lệnh đang chờ
+                const pending = userStates[phone];
+                args = (command + " " + args).trim();
+                command = pending.command;
+                delete userStates[phone]; 
+                console.log(`[Chatbot] Đã nhận tham số: [${args}] cho lệnh chờ [${command}]`);
+            } else {
+                delete userStates[phone]; // Hủy lệnh cũ nếu user gõ lệnh mới hoặc menu
+            }
+        }
+
+        // 2. Nạp danh sách Admin từ DB
         const dbPath = path.join(__dirname, 'users_db.json');
         const users = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
         
-        // 2. Kiểm tra log/auth (Chuẩn hóa tuyệt đối: chỉ giữ lại các chữ số để so sánh)
+        // 3. Kiểm tra log/auth (Chuẩn hóa tuyệt đối: chỉ giữ lại các chữ số để so sánh)
         const normalizedIncoming = phone.replace(/\D/g, "");
         let user = users.find(u => {
             const normalizedDB = u.phone.replace(/\D/g, "");
@@ -191,15 +210,12 @@ async function start() {
             }
 
             if (command === 'sync') {
-                const sync = new CalendarSync(sheets);
-                const summary = await sync.syncAllTeachers();
-                
-                let report = `✅ Google Calendar synchronization completed!\n──────────────────\n`;
-                report += `🔹 Successfully synced: ${summary.successCount} slots\n`;
-                report += `📅 *Lịch Master:* ${summary.masterCalendar}\n\n`;
-                report += `_Mọi lịch dạy của tất cả GV đã được gộp chung vào một lịch duy nhất để dễ theo dõi._\n\n`;
-                report += `📅 *Xem lịch tại đây (Chế độ Tuần):*\nhttps://calendar.google.com/calendar/u/0/r/week`;
-                return report;
+                const calendar = new CalendarSync(sheets);
+                const syncResult = await calendar.syncAllTeachers();
+                return `✅ *ĐỒNG BỘ THÀNH CÔNG!*\n\n` +
+                       `📅 Đã đưa *${syncResult.successCount}* tiết dạy lên Google Calendar.\n` +
+                       `📧 Lịch đích: ${syncResult.masterCalendar}\n\n` +
+                       `🔗 *Bấm để xem ngay:* https://calendar.google.com/`;
             }
 
             if (command === 'import') {
@@ -245,10 +261,15 @@ async function start() {
 
             if (command === 'schedule') {
                 const scheduler = new ScheduleManager(sheets);
-                const target = (role === 'TEACHER') ? (args || teacherName) : (args || teacherName || "Admin");
-                const slots = await scheduler.getSchedule(target);
-                if (!slots) return `ℹ️ Could not find schedule for "${target}".`;
-                return scheduler.formatSchedules(target, slots);
+                const target = args.trim();
+                if (!target && role === 'ADMIN') {
+                    userStates[phone] = { command: 'schedule' };
+                    return `👋 Chào Admin! Bạn muốn xem lịch của ai?\n👉 *Hãy gõ Tên Giáo Viên ngay bên dưới:*`;
+                }
+                const finalTarget = target || teacherName || "Admin";
+                const slots = await scheduler.getSchedule(finalTarget);
+                if (!slots) return `ℹ️ Không tìm thấy lịch dạy cho "${finalTarget}".\n👉 Gõ *stats* để xem danh sách giáo viên!`;
+                return scheduler.formatSchedules(finalTarget, slots);
             }
 
             if (command === 'rooms') {
@@ -263,7 +284,7 @@ async function start() {
             if (command === 'generate') {
                 const generator = new GeneratorEngine(sheets, validator);
                 const isBest = args.includes('best');
-                const genResult = isBest ? await generator.generateBest(5) : await generator.generate();
+                const genResult = isBest ? await generator.generateBest(20) : await generator.generate();
                 
                 let report = `🤖 *AI GENERATION RESULT ${isBest ? "(OPTIMIZED)" : ""}*\n──────────────────\n`;
                 report += `✅ Placed: ${genResult.totalPlaced} slots\n`;
@@ -360,9 +381,14 @@ async function start() {
 
             if (command === 'matrix') {
                 const reports = new ReportEngine(sheets);
-                const target = args.trim() || teacherName;
-                const table = await reports.generateGridMatrix(target);
-                if (!table) return `ℹ️ No schedule found for "${target}" to generate grid.`;
+                const target = args.trim();
+                if (!target && role === 'ADMIN') {
+                    userStates[phone] = { command: 'matrix' };
+                    return `👋 Chào Admin! Bạn muốn xem bảng ma trận của ai?\n👉 *Hãy gõ Tên Giáo Viên ngay bên dưới:*`;
+                }
+                const finalTarget = target || teacherName || "Admin";
+                const table = await reports.generateGridMatrix(finalTarget);
+                if (!table) return `ℹ️ Không tìm thấy dữ liệu ma trận cho "${finalTarget}".`;
                 return table;
             }
 

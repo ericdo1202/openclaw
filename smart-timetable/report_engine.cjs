@@ -137,8 +137,13 @@ class ReportEngine {
         const days = ["T2", "T3", "T4", "T5", "T6"];
         const timeSlots = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
 
-        // Lọc lịch cho đối tượng (GV hoặc Lớp)
-        const filtered = timetable.filter(r => r[0] === targetName || r[5] === targetName);
+        // Lọc lịch cho đối tượng (GV hoặc Lớp) - Không phân biệt hoa thường
+        const searchLower = targetName.toLowerCase();
+        const filtered = timetable.filter(r => 
+            (r[0] && r[0].toLowerCase().includes(searchLower)) || 
+            (r[5] && r[5].toLowerCase().includes(searchLower))
+        );
+        
         if (filtered.length === 0) return null;
 
         let table = `📅 *TIMETABLE GRID: ${targetName}*\n\n`;
@@ -150,7 +155,9 @@ class ReportEngine {
             for (const day of days) {
                 const match = filtered.find(r => r[1] === day && r[2] === slot);
                 if (match) {
-                    const content = (match[0] === targetName) ? match[5] : match[0]; // Nếu xem theo GV thì hiện Lớp, ngược lại hiện GV
+                    // So sánh không phân biệt hoa thường để quyết định hiển thị Lớp hay GV
+                    const isTeacherMatch = match[0] && match[0].toLowerCase().includes(searchLower);
+                    const content = isTeacherMatch ? match[5] : match[0]; 
                     row += ` ${content} |`;
                 } else {
                     row += " - |";
@@ -159,6 +166,7 @@ class ReportEngine {
             table += row + "\n";
         }
 
+        console.log(`[Matrix] Đã tạo xong bảng cho ${targetName} (${filtered.length} tiết)`);
         return table;
     }
 }

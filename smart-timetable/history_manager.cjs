@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const CONFIG = require('./config.json');
 
 class HistoryManager {
@@ -20,16 +20,16 @@ class HistoryManager {
             // 1. Kiểm tra/Tạo thư mục History
             const folderId = await this._ensureHistoryFolder();
             
-            // 2. Copy file vào thư mục đó
+            // 2. Copy file trực tiếp vào thư mục History
             console.log(`📦 Đang tạo bản sao lưu: ${backupName}...`);
-            const cmd = `${this.gogPath} drive copy "${spreadsheetId}" "${backupName}" --json`;
-            const result = JSON.parse(execSync(cmd, { encoding: 'utf-8' }));
+            const cmd = `${this.gogPath} drive copy "${spreadsheetId}" "${backupName}" --parent "${folderId || ''}" --json`;
+            const output = execSync(cmd, { encoding: 'utf-8' });
+            const result = JSON.parse(output);
             
-            const newFileId = result.id || result.fileId;
+            const newFileId = result.file?.id || result.id;
             
-            // 3. Di chuyển vào thư mục History (nếu copy chưa vào thẳng folder)
-            if (folderId) {
-                execSync(`${this.gogPath} drive move "${newFileId}" --folder "${folderId}"`);
+            if (!newFileId) {
+                throw new Error("Không thể lấy ID của file bản sao lưu mới.");
             }
 
             return { success: true, name: backupName, id: newFileId };
@@ -45,8 +45,9 @@ class HistoryManager {
     async listSnapshots() {
         try {
             const folderId = await this._ensureHistoryFolder();
-            const cmd = `${this.gogPath} drive ls "${folderId}" --json`;
-            const result = JSON.parse(execSync(cmd, { encoding: 'utf-8' }));
+            const cmd = `${this.gogPath} drive ls --parent "${folderId}" --json`;
+            const output = execSync(cmd, { encoding: 'utf-8' });
+            const result = JSON.parse(output);
             
             // gog drive ls trả về mảng các file
             const files = Array.isArray(result) ? result : (result.files || []);
@@ -67,7 +68,7 @@ class HistoryManager {
      */
     async _ensureHistoryFolder() {
         try {
-            const searchCmd = `${this.gogPath} drive search "name = '${this.historyFolderName}' and mimeType = 'application/vnd.google-apps.folder'" --json`;
+            const searchCmd = `${this.gogPath} drive search "name = '${this.historyFolderName}' and mimeType = 'application/vnd.google-apps.folder'" --raw-query --json`;
             const result = JSON.parse(execSync(searchCmd, { encoding: 'utf-8' }));
             const folders = Array.isArray(result) ? result : (result.files || []);
             
@@ -76,8 +77,8 @@ class HistoryManager {
             // Tạo mới nếu chưa có
             console.log("📁 Đang tạo thư mục quản lý lịch sử mới...");
             const createCmd = `${this.gogPath} drive mkdir "${this.historyFolderName}" --json`;
-            const newFolder = JSON.parse(execSync(createCmd, { encoding: 'utf-8' }));
-            return newFolder.id;
+            const createResult = JSON.parse(execSync(createCmd, { encoding: 'utf-8' }));
+            return createResult.folder?.id || createResult.id;
         } catch (e) {
             return null; // Trả về root nếu lỗi
         }
