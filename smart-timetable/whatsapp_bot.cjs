@@ -220,58 +220,25 @@ _Tap a link → Press Send to select a feature._`;
 
       const input = numMapping[firstWord] ? firstWord : null;
       const slowCommands = [
-        "import",
-        "generate",
-        "check",
-        "clone",
-        "relief",
-        "sync",
-        "matrix",
-        "pdf",
-        "export",
-        "params",
-        "swap",
-        "history",
-        "save",
-        "stats",
-        "schedule",
-        "rooms",
-        "book",
+        "import", "generate", "check", "clone", "relief", "sync", 
+        "matrix", "pdf", "export", "params", "swap", "history", 
+        "save", "stats", "schedule", "rooms", "book"
       ];
+      
       const cmd = input ? numMapping[input].split(/\s+/)[0] : firstWord;
+      const actualArgs = input ? (numMapping[input].split(/\s+/).slice(1).join(" ") || args) : args;
 
-      if (input) {
-        const mappedParts = numMapping[input].split(/\s+/);
-        const actualCmd = mappedParts[0];
-        const actualArgs = mappedParts.slice(1).join(" ") || args;
+      // 1. Gửi tin nhắn "đang xử lý" NGAY LẬP TỨC nếu là lệnh chậm
+      if (slowCommands.includes(cmd)) {
+        await sendWithLog(msg.from, `⚙️ System is processing *'${cmd}'*... Please wait!`);
+      }
 
-        // 1. Kiểm tra quyền TRƯỚC
-        const report = await this.onCheck(realPhone, actualCmd, actualArgs);
-        
-        // 2. Nếu có quyền (có report) thì mới xử lý tiếp
-        if (report) {
-          console.log(`[WhatsApp] Processing mapped command: ${actualCmd} ${actualArgs}`);
-          
-          if (slowCommands.includes(actualCmd)) {
-            await msg.reply(`⚙️ System is processing *'${actualCmd}'*... Please wait!`);
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-          await sendWithLog(msg.from, report);
-        }
-      } else {
-        // 1. Kiểm tra quyền TRƯỚC
-        const report = await this.onCheck(realPhone, firstWord, args);
-
-        // 2. Nếu có quyền (có report) thì mới xử lý tiếp
-        if (report) {
-          console.log(`[WhatsApp] Processing text command: ${firstWord} ${args}`);
-          
-          if (slowCommands.includes(firstWord)) {
-            await msg.reply(`⚙️ System is processing *'${firstWord}'*... Please wait!`);
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-          await sendWithLog(msg.from, report);
-        }
+      // 2. Thực hiện xử lý logic
+      const report = await this.onCheck(realPhone, cmd, actualArgs);
+      
+      // 3. Gửi kết quả cuối cùng
+      if (report) {
+        await sendWithLog(msg.from, report);
       }
     });
 

@@ -171,21 +171,11 @@ async function start() {
           const newSheetId = result.file.id;
           const webViewLink = result.file.webViewLink;
 
-          // Cập nhật users_db.json
-          const oldSheetId = sheetId;
-          const adminIndex = users.findIndex((u) => {
-            const normalizedDB = u.phone.replace(/\D/g, "");
-            const normalizedIncoming = phone.replace(/\D/g, "");
-            return (
-              normalizedIncoming.includes(normalizedDB) ||
-              normalizedDB.includes(normalizedIncoming)
-            );
+          // Cập nhật users_db.json cho TẤT CẢ ADMIN
+          users.forEach((u) => {
+            if (u.role === "ADMIN") u.sheetId = newSheetId;
           });
-
-          if (adminIndex !== -1) {
-            users[adminIndex].sheetId = newSheetId;
-            fs.writeFileSync(dbPath, JSON.stringify(users, null, 2));
-          }
+          fs.writeFileSync(dbPath, JSON.stringify(users, null, 2));
 
           // Xóa file tạm
           fs.unlinkSync(tempFilePath);
@@ -201,19 +191,11 @@ async function start() {
         const newSheetId = args.trim();
         if (!newSheetId) return "👉 Please provide Sheet ID: register [NEW_ID]";
 
-        // Update current user in DB (Using normalization logic)
-        const adminIndex = users.findIndex((u) => {
-          const normalizedDB = u.phone.replace(/\D/g, "");
-          return (
-            normalizedIncoming.includes(normalizedDB) ||
-            normalizedDB.includes(normalizedIncoming)
-          );
+        // Cập nhật users_db.json cho TẤT CẢ ADMIN
+        users.forEach((u) => {
+          if (u.role === "ADMIN") u.sheetId = newSheetId;
         });
-
-        if (adminIndex !== -1) {
-          users[adminIndex].sheetId = newSheetId;
-          fs.writeFileSync(dbPath, JSON.stringify(users, null, 2));
-        }
+        fs.writeFileSync(dbPath, JSON.stringify(users, null, 2));
         return `✅ New Sheet ID registered successfully!\n🆔 ID: ${newSheetId}\nThe system will use this file from now on.`;
       }
 
