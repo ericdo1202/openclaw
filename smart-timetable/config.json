@@ -19,5 +19,7 @@
     "SESSION_ID": "smart-timetable-fresh",
     "CHECK_KEYWORDS": ["check", "kiểm tra", "clash"]
   },
-  "FALLBACK_WHATSAPP_NUMBER": null
+  "FALLBACK_WHATSAPP_NUMBER": null,
+  "DRIVE_FOLDER_NAME": "Smart-Timetable-Storage",
+  "DRIVE_FOLDER_ID": "1FTLdltQevNItdmh3Fbhd1Q3RF-OgVzQi"
 }

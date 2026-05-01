@@ -4,7 +4,7 @@ const CONFIG = require('./config.json');
 class HistoryManager {
     constructor() {
         this.gogPath = CONFIG.GOG_PATH || '/opt/homebrew/bin/gog';
-        this.historyFolderName = "Smart-Timetable-History";
+        this.primaryFolderId = CONFIG.DRIVE_FOLDER_ID;
     }
 
     /**
@@ -14,8 +14,10 @@ class HistoryManager {
      */
     async createSnapshot(spreadsheetId, suffix = "Manual") {
         try {
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            const backupName = `Backup_${timestamp}_${suffix}`;
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            const timeStr = now.toLocaleTimeString('en-GB').replace(/:/g, '');
+            const backupName = `Backup_${dateStr}_${timeStr}_${suffix}`;
             
             // 1. Kiểm tra/Tạo thư mục History
             const folderId = await this._ensureHistoryFolder();
@@ -67,21 +69,7 @@ class HistoryManager {
      * Đảm bảo thư mục lưu trữ lịch sử tồn tại
      */
     async _ensureHistoryFolder() {
-        try {
-            const searchCmd = `${this.gogPath} drive search "name = '${this.historyFolderName}' and mimeType = 'application/vnd.google-apps.folder'" --raw-query --json`;
-            const result = JSON.parse(execSync(searchCmd, { encoding: 'utf-8' }));
-            const folders = Array.isArray(result) ? result : (result.files || []);
-            
-            if (folders.length > 0) return folders[0].id;
-
-            // Tạo mới nếu chưa có
-            console.log("📁 Đang tạo thư mục quản lý lịch sử mới...");
-            const createCmd = `${this.gogPath} drive mkdir "${this.historyFolderName}" --json`;
-            const createResult = JSON.parse(execSync(createCmd, { encoding: 'utf-8' }));
-            return createResult.folder?.id || createResult.id;
-        } catch (e) {
-            return null; // Trả về root nếu lỗi
-        }
+        return this.primaryFolderId || null;
     }
 }
 

@@ -120,67 +120,74 @@ class WhatsappBot {
               filename.endsWith(".csv");
 
             if (isExcel || firstWord === "import") {
-              await replyWithLog(
-                `✅ Đã nhận file ${media.filename || "Excel"}. Hệ thống đang tiến hành bóc tách 11 tab và push lên Google Sheets...`,
-              );
               const report = await this.onCheck(
                 realPhone,
                 "import_media_base64",
                 media.data,
               );
-              if (report) await replyWithLog(report);
+              if (report) {
+                await replyWithLog(
+                  `✅ File received: ${media.filename || "Excel"}. Extracting 11 tabs and updating Google Sheets...`,
+                );
+                await replyWithLog(report);
+              }
               return;
             }
           }
         } catch (e) {
           console.error("[WhatsApp] Error downloading media:", e);
-          await replyWithLog("❌ Lỗi khi tải file. Vui lòng thử lại.");
+          await replyWithLog("❌ Error downloading file. Please try again.");
           return;
         }
       }
 
-      // 🌟 MENU 21 TÍNH NĂNG (Chuẩn Requirement)
-      if (["menu", "help", "hi", "?", "hello"].includes(firstWord)) {
+      // 🌟 MENU (Kích hoạt khi nhắn "Hi Timetable")
+      const lowerBody = body.trim().toLowerCase();
+      if (lowerBody.includes("hi timetable") || lowerBody.includes("hi timtable")) {
+        // Kiểm tra quyền trước khi gửi Menu
+        const checkAuth = await this.onCheck(realPhone, "menu_check", "");
+        if (!checkAuth) return; 
+
         const n = botPhone;
         const L = (id) => `https://wa.me/${n}?text=${id}`;
 
         const menuText = `🌟 *SMART-TIMETABLE SYSTEM* 🌟
 ───────────────────────
 
-🛠 *GIAI ĐOẠN THIẾT LẬP (Setup)*
-👉 ${L(1)} Nhập dữ liệu Excel (Import)
-👉 ${L(2)} Liên kết Google Sheet ID
-👉 ${L(3)} Xem tham số & Ràng buộc (Rules)
-👉 ${L(4)} Sao chép khung môn học (Clone)
-👉 ${L(5)} Kiểm tra lỗi & Trùng lịch (Check)
+🛠 *SETUP PHASE*
+👉 ${L(1)} Import Excel Data
+👉 ${L(2)} Link Google Sheet ID
+👉 ${L(3)} View Rules & Constraints
+👉 ${L(4)} Clone Class Format
+👉 ${L(5)} Run Validation & Checks
 
-🚀 *GIAI ĐOẠN XẾP LỊCH (Generation)*
-👉 ${L(6)} Xếp lịch tự động (Nhanh 1x)
-👉 ${L(7)} Xếp lịch tối ưu (AI 20x)
-👉 ${L(8)} Hoán đổi tiết dạy (Swap)
-👉 ${L(9)} Xem lịch sử phiên bản (History)
-👉 ${L(10)} Lưu bản sao hiện tại (Snapshot)
+🚀 *GENERATION PHASE*
+👉 ${L(6)} Auto Generate (Fast 1x)
+👉 ${L(7)} Optimized AI Generate (20x)
+👉 ${L(8)} Manual Slot Swap
+👉 ${L(9)} View Backup History
+👉 ${L(10)} Save Current Snapshot
 
-📊 *BÁO CÁO & XUẤT DỮ LIỆU (Reports)*
-👉 ${L(11)} Xem bảng Grid Ma trận
-👉 ${L(12)} Tra cứu lịch Cá nhân (Lookup)
-👉 ${L(13)} Thống kê Tải trọng & Workload
-👉 ${L(14)} Xuất file Excel (.xlsx)
-👉 ${L(15)} Xuất file PDF (.pdf)
+📊 *REPORTS & DATA EXPORT*
+👉 ${L(11)} View Matrix Grid
+👉 ${L(12)} Individual Schedule Lookup
+👉 ${L(13)} Load & Workload Stats
+👉 ${L(14)} Export to Excel (.xlsx)
+👉 ${L(15)} Export to PDF (.pdf)
 
-📅 *QUẢN LÝ DẠY THAY (Relief)*
-👉 ${L(16)} Lập kế hoạch dạy thay tự động
-👉 ${L(17)} Gửi thông báo cho GV dạy thay
-👉 ${L(18)} Lên lịch dạy thay nâng cao
-👉 ${L(19)} Báo cáo tổng hợp dạy thay
-👉 ${L(20)} Tìm phòng học trống
-👉 ${L(21)} Đặt phòng nhanh (Booking)
+📅 *RELIEF MANAGEMENT*
+👉 ${L(16)} Auto Relief Planning
+👉 ${L(17)} Notify Relief Teachers
+👉 ${L(18)} Advance Relief Planning
+👉 ${L(19)} Relief Summary Report
+👉 ${L(20)} Find Empty Rooms
+👉 ${L(21)} Quick Room Booking
 
-🔄 *TÍCH HỢP HỆ THỐNG (Integration)*
-👉 ${L(22)} Đồng bộ Google Calendar
+🔄 *SYSTEM INTEGRATION*
+👉 ${L(22)} Sync to Google Calendar
 
 ───────────────────────
-_Chạm vào link → Nhấn nút Gửi để chọn tính năng._`;
+_Tap a link → Press Send to select a feature._`;
 
         return await sendWithLog(msg.from, menuText);
       }
@@ -195,7 +202,7 @@ _Chạm vào link → Nhấn nút Gửi để chọn tính năng._`;
         6: "generate",
         7: "generate best",
         8: "swap",
-        9: "history",
+        9: "backup",
         10: "save",
         11: "matrix",
         12: "schedule",
@@ -236,36 +243,35 @@ _Chạm vào link → Nhấn nút Gửi để chọn tính năng._`;
       if (input) {
         const mappedParts = numMapping[input].split(/\s+/);
         const actualCmd = mappedParts[0];
-        console.log(
-          `[WhatsApp] Xử lý lệnh map số: ${actualCmd} ${mappedParts.slice(1).join(" ") || args}`,
-        );
+        const actualArgs = mappedParts.slice(1).join(" ") || args;
 
-        if (slowCommands.includes(actualCmd)) {
-          await msg.reply(
-            `⚙️ Hệ thống đang xử lý lệnh *'${actualCmd}'*... Vui lòng đợi trong giây lát!`,
-          );
-          // Chờ một chút để message được gửi đi trước khi bắt đầu tác vụ nặng (tránh block loop)
-          await new Promise((resolve) => setTimeout(resolve, 100));
+        // 1. Kiểm tra quyền TRƯỚC
+        const report = await this.onCheck(realPhone, actualCmd, actualArgs);
+        
+        // 2. Nếu có quyền (có report) thì mới xử lý tiếp
+        if (report) {
+          console.log(`[WhatsApp] Processing mapped command: ${actualCmd} ${actualArgs}`);
+          
+          if (slowCommands.includes(actualCmd)) {
+            await msg.reply(`⚙️ System is processing *'${actualCmd}'*... Please wait!`);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          await sendWithLog(msg.from, report);
         }
-
-        const report = await this.onCheck(
-          realPhone,
-          actualCmd,
-          mappedParts.slice(1).join(" ") || args,
-        );
-        if (report) await sendWithLog(msg.from, report);
       } else {
-        console.log(`[WhatsApp] Xử lý lệnh text: ${firstWord} ${args}`);
-
-        if (slowCommands.includes(firstWord)) {
-          await msg.reply(
-            `⚙️ Hệ thống đang xử lý lệnh *'${firstWord}'*... Vui lòng đợi trong giây lát!`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-
+        // 1. Kiểm tra quyền TRƯỚC
         const report = await this.onCheck(realPhone, firstWord, args);
-        if (report) await sendWithLog(msg.from, report);
+
+        // 2. Nếu có quyền (có report) thì mới xử lý tiếp
+        if (report) {
+          console.log(`[WhatsApp] Processing text command: ${firstWord} ${args}`);
+          
+          if (slowCommands.includes(firstWord)) {
+            await msg.reply(`⚙️ System is processing *'${firstWord}'*... Please wait!`);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          await sendWithLog(msg.from, report);
+        }
       }
     });
 

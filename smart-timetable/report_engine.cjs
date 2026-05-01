@@ -91,7 +91,7 @@ class ReportEngine {
             const reqCount = required[cls];
             const placedCount = placed[cls] || 0;
             if (placedCount < reqCount) {
-                missing.push(`${cls}: Còn thiếu ${reqCount - placedCount} tiết`);
+                missing.push(`${cls}: Missing ${reqCount - placedCount} slots`);
             }
         });
         return missing;
@@ -134,7 +134,8 @@ class ReportEngine {
         const timetableRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.TIMETABLE);
         const timetable = timetableRaw.slice(1);
         
-        const days = ["T2", "T3", "T4", "T5", "T6"];
+        const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+        const dayKeys = ["T2", "T3", "T4", "T5", "T6"];
         const timeSlots = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
 
         // Lọc lịch cho đối tượng (GV hoặc Lớp) - Không phân biệt hoa thường
@@ -147,13 +148,13 @@ class ReportEngine {
         if (filtered.length === 0) return null;
 
         let table = `📅 *TIMETABLE GRID: ${targetName}*\n\n`;
-        table += `| Slot | ${days.join(' | ')} |\n`;
-        table += `| :--- | ${days.map(() => ':---').join(' | ')} |\n`;
+        table += `| Slot | ${dayLabels.join(' | ')} |\n`;
+        table += `| :--- | ${dayLabels.map(() => ':---').join(' | ')} |\n`;
 
         for (const slot of timeSlots) {
             let row = `| ${slot} |`;
-            for (const day of days) {
-                const match = filtered.find(r => r[1] === day && r[2] === slot);
+            for (const dayKey of dayKeys) {
+                const match = filtered.find(r => r[1] === dayKey && r[2] === slot);
                 if (match) {
                     // So sánh không phân biệt hoa thường để quyết định hiển thị Lớp hay GV
                     const isTeacherMatch = match[0] && match[0].toLowerCase().includes(searchLower);
@@ -166,7 +167,7 @@ class ReportEngine {
             table += row + "\n";
         }
 
-        console.log(`[Matrix] Đã tạo xong bảng cho ${targetName} (${filtered.length} tiết)`);
+        console.log(`[Matrix] Generated grid for ${targetName} (${filtered.length} slots)`);
         return table;
     }
 }
