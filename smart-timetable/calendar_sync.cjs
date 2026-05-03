@@ -1,4 +1,6 @@
-const { execSync, execFileSync } = require('child_process');
+const { execFile } = require('child_process');
+const util = require('util');
+const execFilePromise = util.promisify(execFile);
 const CONFIG = require('./config.json');
 
 /**
@@ -7,33 +9,57 @@ const CONFIG = require('./config.json');
 class CalendarSync {
     constructor(sheetsClient) {
         this.sheets = sheetsClient;
-        this.gogPath = "/opt/homebrew/bin/gog";
+        this.gogPath = CONFIG.GOG_PATH || "gog";
     }
 
     /**
-     * Đồng bộ lịch cho toàn bộ GV (Cách 1: Dùng chung một lịch Master)
+     * Đồng bộ lịch cho giáo viên
+     * @param {string} teacherFilter Tên giáo viên cụ thể (nếu có)
      */
-    async syncAllTeachers() {
+    async syncAllTeachers(teacherFilter = "") {
         const teachersRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.TEACHERS);
         const timetableRaw = await this.sheets.getRange(CONFIG.SHEET_RANGES.TIMETABLE);
 
-        const teachers = teachersRaw.slice(1);
+        let teachers = teachersRaw.slice(1);
         const timetable = timetableRaw.slice(1);
+
+        // Nếu có filter, chỉ lọc giáo viên đó
+        if (teacherFilter) {
+            const filter = teacherFilter.toLowerCase().trim();
+            teachers = teachers.filter(t => String(t[0]).toLowerCase().includes(filter));
+            if (teachers.length === 0) {
+                return { error: `Không tìm thấy giáo viên nào khớp với "${teacherFilter}"` };
+            }
+        }
 
         let successCount = 0;
         const masterCalendar = CONFIG.MASTER_CALENDAR_ID || 'primary';
 
-        console.log(`[Calendar] 🚀 Bắt đầu đồng bộ vào lịch Master: ${masterCalendar}`);
+        console.log(`[Calendar] 🚀 Bắt đầu đồng bộ vào lịch: ${masterCalendar}`);
 
-        for (const teacher of teachers) {
-            const [name] = teacher;
-            if (!name) continue;
+        for (let i = 0; i < teachers.length; i++) {
+            const [name] = teachers[i];
+            if (!name || !name.trim()) continue;
 
-            const teacherSlots = timetable.filter(r => r[0] === name);
-            for (const slot of teacherSlots) {
-                // Tạo sự kiện trên lịch Master, thêm tên GV vào tiêu đề
-                const ok = await this.createEvent(masterCalendar, slot);
-                if (ok) successCount++;
+            const teacherName = name.trim();
+            console.log(`[Calendar] ⏳ (${i + 1}/${teachers.length}) Đang xử lý GV: ${teacherName}...`);
+            
+            const teacherSlots = timetable.filter(r => String(r[0]).trim() === teacherName);
+            console.log(`[Calendar]    - Tìm thấy ${teacherSlots.length} tiết dạy. Đang đẩy lên Google...`);
+
+            // Xử lý song song theo từng đợt (batch) 5 tiết để tối ưu tốc độ và tránh lỗi 403
+            const batchSize = 5;
+            for (let j = 0; j < teacherSlots.length; j += batchSize) {
+                const batch = teacherSlots.slice(j, j + batchSize);
+                const results = await Promise.all(batch.map(slot => this.createEvent(masterCalendar, slot)));
+                
+                successCount += results.filter(ok => ok).length;
+                process.stdout.write(`[Calendar]    └─ Tiến độ: ${Math.min(j + batchSize, teacherSlots.length)}/${teacherSlots.length} ✅\n`);
+                
+                // Nghỉ 2 giây giữa các batch để Google không chặn
+                if (j + batchSize < teacherSlots.length) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
             }
         }
 
@@ -72,12 +98,10 @@ class CalendarSync {
         ];
 
         try {
-            // Sử dụng execFileSync để tránh lỗi shell escape với các ký tự đặc biệt trong ID (dấu ngoặc, dấu chấm...)
-            execFileSync(this.gogPath, args, { encoding: 'utf8' });
+            await execFilePromise(this.gogPath, args);
             return true;
         } catch (error) {
-            console.error(`[Calendar] Lỗi tạo sự kiện cho ${calendarId}:`, error.message);
-            if (error.stderr) console.error(`[Calendar] Chi tiết: ${error.stderr}`);
+            console.error(`[Calendar] ❌ Lỗi tại ${calendarId}:`, error.message);
             return false;
         }
     }

@@ -1,3 +1,41 @@
-2026/05/01-18:03:05.954 5b3124 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/05/01-18:03:05.955 5b3124 Recovering log #43
-2026/05/01-18:03:05.978 5b3124 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000043.log 
+2026/05/03-17:49:26.253 83a229 Reusing MANIFEST /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/03-17:49:26.254 83a229 Recovering log #91
+2026/05/03-17:49:26.273 83a229 Reusing old log /Users/duocdo/Documents/Works/Projects/openclaw-project/Untitled/smart-timetable/.wwebjs_auth/session-smart-timetable-fresh/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000091.log 
+2026/05/03-17:54:47.119 83a229 Level-0 table #97: started
+2026/05/03-17:54:47.137 83a229 Level-0 table #97: 1263587 bytes OK
+2026/05/03-17:54:47.140 83a229 Delete type=0 #91
+2026/05/03-17:56:37.652 83a229 Compacting 1@1 + 2@2 files
+2026/05/03-17:56:37.704 83a229 Generated table #98@1: 82026 keys, 2228968 bytes
+2026/05/03-17:56:37.727 83a229 Generated table #99@1: 44914 keys, 2248203 bytes
+2026/05/03-17:56:37.729 83a229 Generated table #100@1: 1520 keys, 77535 bytes
+2026/05/03-17:56:37.729 83a229 Compacted 1@1 + 2@2 files => 4554706 bytes
+2026/05/03-17:56:37.733 83a229 compacted to: files[ 0 0 3 0 0 0 0 ]
+2026/05/03-17:56:37.733 83a229 Delete type=2 #94
+2026/05/03-17:56:37.733 83a229 Delete type=2 #97
+2026/05/03-17:56:37.733 83a229 Delete type=2 #93
+2026/05/03-17:59:03.441 83a239 Level-0 table #102: started
+2026/05/03-17:59:03.464 83a239 Level-0 table #102: 1441707 bytes OK
+2026/05/03-17:59:03.469 83a239 Delete type=0 #96
+2026/05/03-17:59:04.363 83a229 Compacting 1@1 + 3@2 files
+2026/05/03-17:59:04.398 83a229 Generated table #103@1: 82010 keys, 2230123 bytes
+2026/05/03-17:59:04.423 83a229 Generated table #104@1: 48878 keys, 2257746 bytes
+2026/05/03-17:59:04.426 83a229 Generated table #105@1: 2916 keys, 270351 bytes
+2026/05/03-17:59:04.427 83a229 Compacted 1@1 + 3@2 files => 4758220 bytes
+2026/05/03-17:59:04.429 83a229 compacted to: files[ 0 0 3 0 0 0 0 ]
+2026/05/03-17:59:04.430 83a229 Delete type=2 #102
+2026/05/03-17:59:04.430 83a229 Delete type=2 #100
+2026/05/03-17:59:04.430 83a229 Delete type=2 #98
+2026/05/03-17:59:04.430 83a229 Delete type=2 #99
+2026/05/03-18:02:59.874 83a229 Level-0 table #107: started
+2026/05/03-18:02:59.904 83a229 Level-0 table #107: 1265944 bytes OK
+2026/05/03-18:02:59.907 83a229 Delete type=0 #101
+2026/05/03-18:03:04.503 83a239 Compacting 1@1 + 3@2 files
+2026/05/03-18:03:04.547 83a239 Generated table #108@1: 82267 keys, 2228434 bytes
+2026/05/03-18:03:04.568 83a239 Generated table #109@1: 51519 keys, 2257877 bytes
+2026/05/03-18:03:04.574 83a239 Generated table #110@1: 5777 keys, 440745 bytes
+2026/05/03-18:03:04.574 83a239 Compacted 1@1 + 3@2 files => 4927056 bytes
+2026/05/03-18:03:04.576 83a239 compacted to: files[ 0 0 3 0 0 0 0 ]
+2026/05/03-18:03:04.576 83a239 Delete type=2 #103
+2026/05/03-18:03:04.576 83a239 Delete type=2 #104
+2026/05/03-18:03:04.576 83a239 Delete type=2 #105
+2026/05/03-18:03:04.576 83a239 Delete type=2 #107

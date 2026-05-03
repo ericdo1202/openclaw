@@ -132,6 +132,7 @@ async function start() {
     const validator = new ValidationEngine(sheets);
 
     // --- XỬ LÝ LỆNH ---
+    console.log(`[App] 📥 INCOMING: Phone=${phone}, Command=${command}, Args=${args}`);
     console.log(
       `[App] ⚙️ Processing feature: ${command.toUpperCase()} (Args: ${args.substring(0, 50)}${args.length > 50 ? "..." : ""})`,
     );
@@ -180,7 +181,7 @@ async function start() {
           // Xóa file tạm
           fs.unlinkSync(tempFilePath);
 
-          return `✅ *IMPORT COMPLETED!*\n──────────────────\n🎉 Data has been successfully converted into a new Google Sheets file!\n\n🔗 *Access Link:*\n${webViewLink}\n\n👉 The system is now automatically linked to this new file. You can use 'check' to start validation!`;
+          return `✅ *IMPORT COMPLETED!*\n──────────────────\n🎉 Data has been successfully converted into a new Google Sheets file!\n\n🔗 *Access Link:*\n${webViewLink}\n\n👉 The system is now automatically linked to this new file.\n💡 *Tip:* Please check all tabs (Teachers, Timetable, Deployment, etc.) to ensure data is correct!`;
         } catch (e) {
           console.error(`[App] ❌ Import Exception:`, e);
           return `❌ *IMPORT ERROR*\nPlease check your internet connection or Google login session.`;
@@ -229,12 +230,21 @@ async function start() {
           report += `  • ${r[0]}: ${r[1]}-${r[2]} (${r[3] || "Break"})\n`;
         });
 
-        return report + "\n👉 Edit these directly in Google Sheets.";
+        return report + "\n👉 Edit these directly in Google Sheets (*Constraints, BandedGroups, Recess* tabs).";
       }
 
       if (command === "export") {
-        const downloadUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
-        return `📥 *EXPORT TO MS EXCEL*\n──────────────────\n\nClick the link below to download:\n\n${downloadUrl}\n\n_Includes all sheets: Timetable, Teachers, Deployment, etc._`;
+        const type = (args || "").toLowerCase().trim();
+        const excelUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+        const pdfUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=pdf&size=7&fzr=true&portrait=false&fitw=true&gridlines=false`;
+
+        if (type === "excel" || type === "xlsx") {
+          return `📥 *EXPORT TO MS EXCEL*\n──────────────────\n\nClick the link below to download:\n\n${excelUrl}\n\n_Includes all sheets: Timetable, Teachers, Deployment, etc._`;
+        } else if (type === "pdf") {
+          return `📄 *EXPORT TO PDF*\n──────────────────\n\nClick the link below to download your printable PDF report:\n\n${pdfUrl}`;
+        } else {
+          return `📥 *EXPORT OPTIONS*\n──────────────────\n\n👉 Type *'export excel'* to download as Excel file.\n👉 Type *'export pdf'* to download as PDF file.`;
+        }
       }
 
       if (command === "check") {
@@ -287,7 +297,8 @@ async function start() {
 
       if (command === "sync") {
         const calendar = new CalendarSync(sheets);
-        const syncResult = await calendar.syncAllTeachers();
+        const syncResult = await calendar.syncAllTeachers(args);
+        if (syncResult.error) return `❌ ${syncResult.error}`;
         return (
           `✅ *SYNC SUCCESSFUL!*\n\n` +
           `📅 Synchronized *${syncResult.successCount}* teaching slots to Google Calendar.\n` +
@@ -301,10 +312,16 @@ async function start() {
       }
 
       if (command === "swap") {
-        const [teacher, day1, time1, day2, time2] = (args || "").split(/\s+/);
-        if (!teacher || !day1 || !time1 || !day2 || !time2) {
-          return "🔄 *MANUAL SWAP (Edit)*\n──────────────────\n\n👉 *Syntax:* \nswap [Teacher] [Day1] [Time1] [Day2] [Time2]\n\n👉 *Example:*\n`swap Mr.John Mon 08:00 Tue 09:00`\n\n_Used to swap 2 teaching slots of a teacher._";
+        const swapRegex = /^(.*?)\s+(T[2-7]|CN)\s+(\d{1,2}:\d{2})\s+(T[2-7]|CN)\s+(\d{1,2}:\d{2})$/i;
+        const match = (args || "").trim().match(swapRegex);
+        console.log(`[Swap Debug] Args: "${args}", Match:`, match ? "YES" : "NO");
+
+        if (!match) {
+          return "🔄 *MANUAL SWAP (Edit)*\n──────────────────\n\n👉 *Syntax:* \nswap [Teacher Name] [Day1] [Time1] [Day2] [Time2]\n\n👉 *Example:*\n`swap Samantha Watkins T2 8:00 T3 8:00`\n\n_Used to swap 2 teaching slots of a teacher._";
         }
+
+        const [, teacher, day1, time1, day2, time2] = match;
+        const teacherTrim = teacher.trim();
 
         const timetableRaw = await sheets.getRange(
           CONFIG.SHEET_RANGES.TIMETABLE,
@@ -312,14 +329,14 @@ async function start() {
         const timetable = timetableRaw.slice(1);
 
         const slot1Idx = timetable.findIndex(
-          (r) => r[0] === teacher && r[1] === day1 && r[2] === time1,
+          (r) => String(r[0]).trim() === teacherTrim && String(r[1]).trim() === day1 && String(r[2]).trim() === time1,
         );
         const slot2Idx = timetable.findIndex(
-          (r) => r[0] === teacher && r[1] === day2 && r[2] === time2,
+          (r) => String(r[0]).trim() === teacherTrim && String(r[1]).trim() === day2 && String(r[2]).trim() === time2,
         );
 
         if (slot1Idx === -1 && slot2Idx === -1)
-          return `❌ No teaching schedule found for ${teacher} at either time slot.`;
+          return `❌ No teaching schedule found for "${teacherTrim}" at either time slot (${day1} ${time1} or ${day2} ${time2}).`;
 
         // Proceeding with swap
         let msg = `✅ Successfully swapped slots for ${teacher}:\n`;
@@ -341,14 +358,10 @@ async function start() {
         ]);
         return (
           msg +
-          "\n👉 Please check the 'Timetable' tab in Google Sheets to see changes. Remember to run *check* to ensure no conflicts!"
+          "\n👉 Please check the *'Timetable'* tab in Google Sheets to see changes. Remember to run *check* to ensure no conflicts!"
         );
       }
 
-      if (command === "pdf") {
-        const downloadUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=pdf&portrait=false`;
-        return `📄 *EXPORT TO PDF*\n──────────────────\n\nClick the link below to download your printable PDF report:\n\n${downloadUrl}`;
-      }
 
       if (command === "schedule") {
         const scheduler = new ScheduleManager(sheets);
@@ -409,7 +422,7 @@ async function start() {
         } else {
           report += `🎊 100% Completed with zero errors!\n`;
         }
-        report += `\n👉 Please open the 'Timetable' tab in Google Sheets to view the auto-generated results!`;
+        report += `\n👉 Please open the *'Timetable'* tab in Google Sheets to view the auto-generated results!`;
         return report;
       }
 
@@ -420,7 +433,7 @@ async function start() {
           return "👉 Please enter: clone [Source_Class] [Target_Class]";
         const result = await depManager.cloneClassDeployment(source, target);
         if (result.success) {
-          return `✅ Successfully cloned ${result.count} rows from ${source} to ${target}!\n👉 Please check the 'Deployment' tab in Google Sheets for class ${target}! (Avoid cloning too many times to prevent overloading teaching slots)`;
+          return `✅ Successfully cloned ${result.count} rows from ${source} to ${target}!\n👉 Please check the *'Deployment'* tab in Google Sheets for class ${target}! (Avoid cloning too many times to prevent overloading teaching slots)`;
         }
         return `❌ Error: ${result.error}`;
       }
@@ -455,7 +468,7 @@ async function start() {
             CONFIG.SHEET_RANGES.TEACHERS,
           );
           const teacherMap = {};
-          teachersRaw.slice(1).forEach((t) => (teacherMap[t[0]] = t[1]));
+          teachersRaw.slice(1).forEach((t) => (teacherMap[String(t[0]).trim()] = t[1]));
           for (const item of result.plan) {
             const tPhone = teacherMap[item.reliefTeacher];
             if (tPhone) {
@@ -463,7 +476,7 @@ async function start() {
               await bot.sendMessage(tPhone, content);
             }
           }
-          return `✅ Plan saved and notifications sent for ${result.plan.length} slots on ${date}!\n👉 Please check the 'ReliefLog' tab in Google Sheets to see the history!`;
+          return `✅ Plan saved and notifications sent for ${result.plan.length} slots on ${date}!\n👉 Please check the *'ReliefLog'* tab in Google Sheets to see the history!`;
         }
         let report = `📋 *RELIEF PLAN (${date})*\n──────────────────\n`;
         result.plan.forEach((p) => {
@@ -543,7 +556,7 @@ async function start() {
         ).concat([newBooking]);
         await sheets.updateRange(CONFIG.SHEET_RANGES.BOOKINGS, finalBookings);
 
-        return `✅ Room ${room} booked successfully!\n📅 Date: ${day}\n⏰ Time: ${start} - ${end}\n📝 Note: ${desc}`;
+        return `✅ Room ${room} booked successfully!\n📅 Date: ${day}\n⏰ Time: ${start} - ${end}\n📝 Note: ${desc}\n👉 Please check the *'Bookings'* tab in Google Sheets!`;
       }
 
       return `❓ Invalid command: *'${command}'*.\n👉 Type *'Hi Timetable'* to see the list of available features!`;

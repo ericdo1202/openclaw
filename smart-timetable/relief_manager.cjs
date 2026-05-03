@@ -44,7 +44,10 @@ class ReliefManager {
             const absentTeacher = abs[1];
             // NÂNG CẤP: Nếu có mappingDay, lấy lịch dạy của ngày đó thay vì ngày vắng
             const timetableDay = mappingDay || this.getDayOfWeek(dateInput); 
-            const missingSlots = timetable.filter(r => r[0] === absentTeacher && r[1] === timetableDay);
+            const missingSlots = timetable.filter(r => 
+                String(r[0]).trim() === String(absentTeacher).trim() && 
+                String(r[1]).trim() === String(timetableDay).trim()
+            );
 
             for (const slot of missingSlots) {
                 const [ , day, start, end, , className] = slot;
@@ -54,9 +57,14 @@ class ReliefManager {
                     const name = t[0];
                     const email = t[5]; // Cột Email (0-indexed 5: Column F)
                     
-                    const isBusyClass = timetable.some(r => r[0] === name && r[1] === day && r[2] === start);
+                    const isBusyClass = timetable.some(r => 
+                        String(r[0]).trim() === String(name).trim() && 
+                        String(r[1]).trim() === String(day).trim() && 
+                        String(r[2]).trim() === String(start).trim()
+                    );
                     const isBusyConstraint = constraints.some(c => 
-                        c[0] === name && c[1] === day && 
+                        String(c[0]).trim() === String(name).trim() && 
+                        String(c[1]).trim() === String(day).trim() && 
                         this.validator.timeToMin(start) < this.validator.timeToMin(c[3]) && 
                         this.validator.timeToMin(end) > this.validator.timeToMin(c[2])
                     );
@@ -175,10 +183,22 @@ class ReliefManager {
     }
 
     getDayOfWeek(dateStr) {
-        // Hàm này giả định logic chuyển đổi ngày sang T2, T3...
-        // Để đơn giản, giả sử input dateStr chính là "T2", "T3"... 
-        // Trong thực tế sẽ dùng library moment hoặc date-fns.
-        return dateStr; 
+        if (!dateStr || dateStr.includes('T')) return dateStr; // Đã là T2, T3...
+        
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+
+        const day = date.getDay(); // 0 (Sun) to 6 (Sat)
+        const mapping = {
+            0: "CN",
+            1: "T2",
+            2: "T3",
+            3: "T4",
+            4: "T5",
+            5: "T6",
+            6: "T7"
+        };
+        return mapping[day];
     }
 }
 
